@@ -1,8 +1,8 @@
-import cron from 'node-cron'
+import cron, { type ScheduledTask } from 'node-cron'
 import { getDb } from '../db/index.js'
 import { sendWebhook } from './discord.js'
 
-const activeTasks = new Map<number, cron.ScheduledTask>()
+const activeTasks = new Map<number, ScheduledTask>()
 
 function scheduleJob(job: any): void {
   if (activeTasks.has(job.id)) {
