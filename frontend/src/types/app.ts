@@ -48,7 +48,7 @@ export interface RssFeed {
 
 export interface TutorialBlock {
   id: string
-  type: 'text' | 'image' | 'video' | 'embed' | 'separator' | 'code'
+  type: 'text' | 'image' | 'video' | 'embed' | 'separator' | 'code' | 'callout'
   content: any
 }
 

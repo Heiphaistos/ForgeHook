@@ -5,7 +5,7 @@ import { z } from 'zod'
 
 const blockSchema = z.object({
   id: z.string(),
-  type: z.enum(['text', 'image', 'video', 'embed', 'separator', 'code']),
+  type: z.enum(['text', 'image', 'video', 'embed', 'separator', 'code', 'callout']),
   content: z.any(),
 })
 
@@ -13,7 +13,7 @@ const tutorialSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().optional(),
   blocks: z.array(blockSchema),
-  published: z.boolean().default(false),
+  published: z.union([z.boolean(), z.number()]).transform(v => !!v).default(false),
 })
 
 export const tutorialRoutes = new Hono()

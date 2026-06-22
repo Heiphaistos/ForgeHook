@@ -11,8 +11,10 @@ import { schedulerRoutes } from './routes/scheduler.js'
 import { rssRoutes } from './routes/rss.js'
 import { tutorialRoutes } from './routes/tutorials.js'
 import { discordRoutes } from './routes/discord.js'
+import { uploadRoutes } from './routes/uploads.js'
 import { startScheduler } from './services/scheduler.js'
 import { startRssPoller } from './services/rss.js'
+import { mkdirSync } from 'fs'
 
 const app = new Hono()
 
@@ -31,6 +33,8 @@ app.route('/api/scheduler', schedulerRoutes)
 app.route('/api/rss', rssRoutes)
 app.route('/api/tutorials', tutorialRoutes)
 app.route('/api/discord', discordRoutes)
+app.route('/api/uploads', uploadRoutes)
+mkdirSync(process.env.UPLOAD_DIR ?? '/app/data/uploads', { recursive: true })
 
 app.get('/health', (c) => c.json({ ok: true, version: '1.0.0', app: 'forgehook' }))
 

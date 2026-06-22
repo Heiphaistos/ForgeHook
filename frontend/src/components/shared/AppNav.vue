@@ -43,6 +43,7 @@ const navItems = [
   { to: '/scheduler', icon: '⏰', label: 'Planificateur' },
   { to: '/history', icon: '📜', label: 'Historique' },
   { to: '/templates', icon: '📋', label: 'Templates' },
+  { to: '/fonts', icon: '🔤', label: 'Discord Fonts' },
 ]
 
 function logout() {
