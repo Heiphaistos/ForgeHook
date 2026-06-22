@@ -2,7 +2,7 @@
   <div class="embed-builder">
     <div class="section">
       <label class="fh-label">Couleur de la barre</label>
-      <EmbedColorPicker v-model="embed.color" />
+      <EmbedColorPicker :model-value="embed.color ?? null" @update:model-value="embed.color = $event" />
     </div>
 
     <div class="section">

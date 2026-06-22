@@ -152,10 +152,8 @@ import api from '../api/client'
 import { emptyEmbed } from '../types/discord'
 import type { Tutorial, TutorialBlock } from '../types/app'
 
-// Note: for drag-and-drop install: npm install vuedraggable@next
-// Fallback: manual moveBlock works without it
-let draggable: any
-try { draggable = (await import('vuedraggable')).default } catch { draggable = { name: 'draggable', template: '<div><slot /><slot name="item" v-for="(el, i) in modelValue" :element="el" :index="i" /></div>', props: ['modelValue', 'itemKey', 'handle', 'animation'] } }
+// Drag-and-drop fallback — use moveBlock() buttons instead of vuedraggable
+const draggable = { name: 'draggable', template: '<div><slot name="item" v-for="(el, i) in modelValue" :element="el" :index="i" /></div>', props: ['modelValue', 'itemKey', 'handle', 'animation'] }
 
 const route = useRoute()
 const router = useRouter()
