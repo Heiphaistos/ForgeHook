@@ -28,6 +28,25 @@
       </div>
     </div>
 
+    <!-- Bot Discord status -->
+    <div class="bot-status-bar mt-4" v-if="botStatus !== null">
+      <div class="bot-status-icon">🤖</div>
+      <div class="bot-status-body">
+        <span class="bot-status-name">Bot Discord</span>
+        <span :class="['bot-badge', botStatus.online ? 'badge-online' : 'badge-offline']">
+          {{ botStatus.online ? '● En ligne' : '● Hors ligne' }}
+        </span>
+        <template v-if="botStatus.online">
+          <span class="bot-stat">🏠 {{ botStatus.guilds }} serveur{{ botStatus.guilds !== 1 ? 's' : '' }}</span>
+          <span class="bot-stat">👥 {{ botStatus.users }} utilisateurs</span>
+          <span class="bot-stat">⚡ {{ botStatus.commands_today }} cmds/jour</span>
+          <span class="bot-stat">⏱ {{ botStatus.uptime }}</span>
+        </template>
+        <span v-else class="bot-error">{{ botStatus.error }}</span>
+      </div>
+      <a href="http://127.0.0.1:3031" target="_blank" rel="noopener" class="btn-secondary bot-link" v-if="botStatus.online">Dashboard →</a>
+    </div>
+
     <!-- Chart 7 jours + Top webhooks -->
     <div class="dashboard-grid mt-4">
       <div class="card">
@@ -90,7 +109,7 @@ import { ref, computed, onMounted } from 'vue'
 import api from '../api/client'
 import type { HistoryEntry } from '../types/app'
 
-const counts = ref({ webhooks: 0, bots: 0, templates: 0, rss: 0, jobs: 0 })
+const botStatus = ref<{ online: boolean; guilds?: number; users?: number; commands_today?: number; uptime?: string; error?: string } | null>(null)
 const msgStats = ref<{
   total: number; success: number; errors: number;
   byDay: { day: string; n: number }[];
@@ -113,6 +132,12 @@ onMounted(async () => {
   counts.value = { webhooks: wh.data.length, bots: bots.data.length, templates: tpl.data.length, rss: rss.data.length, jobs: jobs.data.length }
   msgStats.value = stats.data
   recentHistory.value = hist.data
+
+  api.get('/bots/discord-bot/status').then(r => {
+    botStatus.value = r.data
+  }).catch(() => {
+    botStatus.value = { online: false, error: 'Non configuré' }
+  })
 })
 
 function fmtDate(d: string): string {
@@ -127,6 +152,16 @@ function shortDay(day: string): string {
 
 <style scoped>
 .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+.bot-status-bar { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.bot-status-icon { font-size: 22px; flex-shrink: 0; }
+.bot-status-body { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 1; }
+.bot-status-name { font-weight: 700; font-size: 14px; color: #fff; }
+.bot-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; }
+.badge-online { background: rgba(87,242,135,.15); color: #57f287; }
+.badge-offline { background: rgba(237,66,69,.15); color: #ed4245; }
+.bot-stat { font-size: 12px; color: var(--text-muted); }
+.bot-error { font-size: 12px; color: var(--text-muted); font-style: italic; }
+.bot-link { font-size: 12px; margin-left: auto; flex-shrink: 0; text-decoration: none; }
 .stat-card { background: var(--bg-secondary); border-radius: 8px; padding: 16px; display: flex; align-items: center; gap: 12px; border: 1px solid var(--border); }
 .stat-card.success-card { border-color: rgba(87,242,135,.3); }
 .stat-card.error-card { border-color: rgba(237,66,69,.3); }

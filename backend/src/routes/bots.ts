@@ -101,6 +101,22 @@ botRoutes.get('/:id/guilds', async (c) => {
   return c.json(guilds.map(g => ({ id: g.id, name: g.name, icon: g.icon, owner: g.owner })))
 })
 
+botRoutes.get('/discord-bot/status', async (c) => {
+  const url = process.env.BOT_DISCORD_URL
+  const secret = process.env.BOT_DISCORD_SECRET
+  if (!url || !secret) return c.json({ online: false, error: 'BOT_DISCORD_URL ou BOT_DISCORD_SECRET non configurés' }, 503)
+  try {
+    const res = await fetch(`${url.replace(/\/$/, '')}/api/internal/status`, {
+      headers: { Authorization: `Bearer ${secret}` },
+      signal: AbortSignal.timeout(5_000),
+    })
+    if (!res.ok) return c.json({ online: false, error: `HTTP ${res.status}` }, 502)
+    return c.json(await res.json())
+  } catch (e: any) {
+    return c.json({ online: false, error: e?.message ?? 'Timeout ou connexion refusée' }, 502)
+  }
+})
+
 botRoutes.get('/:id/guilds/:guildId/channels', async (c) => {
   const bot = getBot(Number(c.req.param('id')))
   if (!bot) return c.json({ error: 'Not found' }, 404)
