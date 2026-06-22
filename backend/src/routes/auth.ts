@@ -1,6 +1,8 @@
 import { Hono } from 'hono'
-import { hash, compare } from 'bcryptjs'
-import { sign } from 'jsonwebtoken'
+import bcrypt from 'bcryptjs'
+const { hash, compare } = bcrypt
+import jwt from 'jsonwebtoken'
+const { sign } = jwt
 import { getDb } from '../db/index.js'
 import { z } from 'zod'
 

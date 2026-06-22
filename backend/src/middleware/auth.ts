@@ -1,5 +1,6 @@
 import { createMiddleware } from 'hono/factory'
-import { verify } from 'jsonwebtoken'
+import jwt from 'jsonwebtoken'
+const { verify } = jwt
 
 export const requireAuth = createMiddleware(async (c, next) => {
   const header = c.req.header('Authorization')
