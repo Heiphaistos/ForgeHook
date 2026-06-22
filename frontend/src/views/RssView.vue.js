@@ -17,37 +17,56 @@ const rssdiLoading = ref(false);
 const rssdiError = ref('');
 const rssdiFeeds = ref([]);
 const rssdiArticles = ref([]);
+const rssdiConnected = ref(false);
+const rssdiToken = ref(localStorage.getItem('fh_rssdi_token') ?? '');
 onMounted(async () => {
     const [f, w] = await Promise.all([api.get('/rss'), api.get('/webhooks')]);
     feeds.value = f.data;
     webhooks.value = w.data;
+    // Auto-connecter si token sauvegardé
+    if (rssdiToken.value && activeTab.value === 'rssdi')
+        loadRssdi();
 });
+function saveToken() {
+    if (rssdiToken.value)
+        localStorage.setItem('fh_rssdi_token', rssdiToken.value);
+    else
+        localStorage.removeItem('fh_rssdi_token');
+}
 function openRssdi() {
     activeTab.value = 'rssdi';
-    loadRssdi();
+    if (rssdiToken.value && !rssdiFeeds.value.length)
+        loadRssdi();
 }
 async function loadRssdi() {
+    if (!rssdiToken.value) {
+        rssdiError.value = 'Entrez votre token RSSDI pour vous connecter.';
+        return;
+    }
     rssdiLoading.value = true;
     rssdiError.value = '';
+    rssdiConnected.value = false;
+    const headers = { 'X-Rssdi-Token': rssdiToken.value };
     try {
         const [feedsRes, articlesRes] = await Promise.allSettled([
-            fetch(`${rssdiUrl}/api/feeds`, { credentials: 'include' }),
-            fetch(`${rssdiUrl}/api/articles?limit=20`, { credentials: 'include' }),
+            api.get('/rssdi/feeds', { headers }),
+            api.get('/rssdi/articles?limit=20', { headers }),
         ]);
-        if (feedsRes.status === 'fulfilled' && feedsRes.value.ok) {
-            const data = await feedsRes.value.json();
-            rssdiFeeds.value = Array.isArray(data) ? data : (data.feeds ?? data.items ?? []);
+        if (feedsRes.status === 'fulfilled') {
+            rssdiFeeds.value = feedsRes.value.data;
+            rssdiConnected.value = true;
+            saveToken();
         }
         else {
-            rssdiError.value = 'Impossible d\'accéder à RSSDI. Assurez-vous d\'être connecté à votre instance.';
+            const err = feedsRes.reason?.response?.data?.hint ?? 'Token invalide ou RSSDI inaccessible.';
+            rssdiError.value = err;
         }
-        if (articlesRes.status === 'fulfilled' && articlesRes.value.ok) {
-            const data = await articlesRes.value.json();
-            rssdiArticles.value = Array.isArray(data) ? data : (data.articles ?? data.items ?? []);
+        if (articlesRes.status === 'fulfilled') {
+            rssdiArticles.value = articlesRes.value.data;
         }
     }
-    catch {
-        rssdiError.value = 'Erreur de connexion à RSSDI. Vérifiez que l\'instance est accessible.';
+    catch (e) {
+        rssdiError.value = e?.response?.data?.hint ?? 'Erreur de connexion à RSSDI.';
     }
     finally {
         rssdiLoading.value = false;
@@ -131,6 +150,7 @@ let __VLS_components;
 let __VLS_directives;
 /** @type {__VLS_StyleScopedClasses['tab']} */ ;
 /** @type {__VLS_StyleScopedClasses['rssdi-btn']} */ ;
+/** @type {__VLS_StyleScopedClasses['token-hint']} */ ;
 /** @type {__VLS_StyleScopedClasses['rssdi-info']} */ ;
 /** @type {__VLS_StyleScopedClasses['rssdi-info']} */ ;
 /** @type {__VLS_StyleScopedClasses['article-row']} */ ;
@@ -280,6 +300,30 @@ if (__VLS_ctx.activeTab === 'rssdi') {
         rel: "noopener",
         ...{ class: "btn-secondary" },
     });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+        ...{ class: "rssdi-token-row" },
+    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+        ...{ class: "token-label" },
+    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+        ...{ class: "token-input-wrap" },
+    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.input)({
+        ...{ onChange: (__VLS_ctx.saveToken) },
+        type: "password",
+        placeholder: "eyJhbGciOiJIUzI1NiIs... (coller votre JWT depuis RSSDI)",
+        ...{ class: "fh-input token-input" },
+    });
+    (__VLS_ctx.rssdiToken);
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
+        ...{ onClick: (__VLS_ctx.loadRssdi) },
+        ...{ class: "btn-primary" },
+    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.p, __VLS_intrinsicElements.p)({
+        ...{ class: "token-hint" },
+    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.code, __VLS_intrinsicElements.code)({});
     if (__VLS_ctx.rssdiLoading) {
         __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
             ...{ class: "rssdi-loading" },
@@ -298,7 +342,7 @@ if (__VLS_ctx.activeTab === 'rssdi') {
             ...{ class: "btn-secondary ml-2" },
         });
     }
-    else {
+    else if (__VLS_ctx.rssdiFeeds.length || __VLS_ctx.rssdiConnected) {
         __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({});
         if (__VLS_ctx.rssdiFeeds.length) {
             __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
@@ -342,6 +386,8 @@ if (__VLS_ctx.activeTab === 'rssdi') {
                                 return;
                             if (!!(__VLS_ctx.rssdiError))
                                 return;
+                            if (!(__VLS_ctx.rssdiFeeds.length || __VLS_ctx.rssdiConnected))
+                                return;
                             if (!(__VLS_ctx.rssdiFeeds.length))
                                 return;
                             __VLS_ctx.importFromRssdi(f);
@@ -370,37 +416,37 @@ if (__VLS_ctx.activeTab === 'rssdi') {
                 ...{ style: {} },
             });
         }
-    }
-    if (__VLS_ctx.rssdiFeeds.length && __VLS_ctx.rssdiArticles.length) {
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-            ...{ class: "mt-4" },
-        });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.h3, __VLS_intrinsicElements.h3)({
-            ...{ class: "section-title-sm" },
-        });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-            ...{ class: "articles-list" },
-        });
-        for (const [art] of __VLS_getVForSourceType((__VLS_ctx.rssdiArticles.slice(0, 20)))) {
-            __VLS_asFunctionalElement(__VLS_intrinsicElements.a, __VLS_intrinsicElements.a)({
-                key: (art.id),
-                href: (art.link),
-                target: "_blank",
-                rel: "noopener",
-                ...{ class: "article-row" },
+        if (__VLS_ctx.rssdiArticles.length) {
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+                ...{ class: "mt-4" },
+            });
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.h3, __VLS_intrinsicElements.h3)({
+                ...{ class: "section-title-sm" },
             });
             __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-                ...{ class: "article-feed-name" },
+                ...{ class: "articles-list" },
             });
-            (art.feed_name);
-            __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-                ...{ class: "article-title" },
-            });
-            (art.title);
-            __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-                ...{ class: "article-date" },
-            });
-            (__VLS_ctx.fmtDate(art.published_at));
+            for (const [art] of __VLS_getVForSourceType((__VLS_ctx.rssdiArticles.slice(0, 20)))) {
+                __VLS_asFunctionalElement(__VLS_intrinsicElements.a, __VLS_intrinsicElements.a)({
+                    key: (art.id),
+                    href: (art.link),
+                    target: "_blank",
+                    rel: "noopener",
+                    ...{ class: "article-row" },
+                });
+                __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+                    ...{ class: "article-feed-name" },
+                });
+                (art.feed_name);
+                __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+                    ...{ class: "article-title" },
+                });
+                (art.title);
+                __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+                    ...{ class: "article-date" },
+                });
+                (__VLS_ctx.fmtDate(art.published_at));
+            }
         }
     }
 }
@@ -541,6 +587,13 @@ if (__VLS_ctx.showForm) {
 /** @type {__VLS_StyleScopedClasses['rssdi-info']} */ ;
 /** @type {__VLS_StyleScopedClasses['rssdi-icon']} */ ;
 /** @type {__VLS_StyleScopedClasses['btn-secondary']} */ ;
+/** @type {__VLS_StyleScopedClasses['rssdi-token-row']} */ ;
+/** @type {__VLS_StyleScopedClasses['token-label']} */ ;
+/** @type {__VLS_StyleScopedClasses['token-input-wrap']} */ ;
+/** @type {__VLS_StyleScopedClasses['fh-input']} */ ;
+/** @type {__VLS_StyleScopedClasses['token-input']} */ ;
+/** @type {__VLS_StyleScopedClasses['btn-primary']} */ ;
+/** @type {__VLS_StyleScopedClasses['token-hint']} */ ;
 /** @type {__VLS_StyleScopedClasses['rssdi-loading']} */ ;
 /** @type {__VLS_StyleScopedClasses['spinner']} */ ;
 /** @type {__VLS_StyleScopedClasses['rssdi-error']} */ ;
@@ -602,6 +655,9 @@ const __VLS_self = (await import('vue')).defineComponent({
             rssdiError: rssdiError,
             rssdiFeeds: rssdiFeeds,
             rssdiArticles: rssdiArticles,
+            rssdiConnected: rssdiConnected,
+            rssdiToken: rssdiToken,
+            saveToken: saveToken,
             openRssdi: openRssdi,
             loadRssdi: loadRssdi,
             importFromRssdi: importFromRssdi,

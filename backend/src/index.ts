@@ -12,6 +12,7 @@ import { rssRoutes } from './routes/rss.js'
 import { tutorialRoutes } from './routes/tutorials.js'
 import { discordRoutes } from './routes/discord.js'
 import { uploadRoutes } from './routes/uploads.js'
+import { rssdiRoutes } from './routes/rssdi.js'
 import { startScheduler } from './services/scheduler.js'
 import { startRssPoller } from './services/rss.js'
 import { mkdirSync } from 'fs'
@@ -34,6 +35,7 @@ app.route('/api/rss', rssRoutes)
 app.route('/api/tutorials', tutorialRoutes)
 app.route('/api/discord', discordRoutes)
 app.route('/api/uploads', uploadRoutes)
+app.route('/api/rssdi', rssdiRoutes)
 mkdirSync(process.env.UPLOAD_DIR ?? '/app/data/uploads', { recursive: true })
 
 app.get('/health', (c) => c.json({ ok: true, version: '2.0.0', app: 'forgehook' }))

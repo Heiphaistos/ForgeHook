@@ -69,15 +69,34 @@
         </a>
       </div>
 
+      <!-- Token RSSDI -->
+      <div class="rssdi-token-row">
+        <div class="token-label">🔑 Token RSSDI (JWT)</div>
+        <div class="token-input-wrap">
+          <input
+            v-model="rssdiToken"
+            type="password"
+            placeholder="eyJhbGciOiJIUzI1NiIs... (coller votre JWT depuis RSSDI)"
+            class="fh-input token-input"
+            @change="saveToken"
+          />
+          <button @click="loadRssdi" class="btn-primary">🔗 Connecter</button>
+        </div>
+        <p class="token-hint">
+          Sur RSSDI → DevTools → Application → localStorage → <code>token</code>
+          (ou Network → n'importe quelle requête → Authorization: Bearer …)
+        </p>
+      </div>
+
       <div v-if="rssdiLoading" class="rssdi-loading">
         <div class="spinner" />
-        Chargement des flux RSSDI...
+        Connexion à RSSDI...
       </div>
       <div v-else-if="rssdiError" class="rssdi-error">
         ⚠️ {{ rssdiError }}
         <button @click="loadRssdi" class="btn-secondary ml-2">Réessayer</button>
       </div>
-      <div v-else>
+      <div v-else-if="rssdiFeeds.length || rssdiConnected">
         <div v-if="rssdiFeeds.length" class="rssdi-grid">
           <div v-for="f in rssdiFeeds" :key="f.id" class="rssdi-card">
             <div class="rssdi-card-top">
@@ -104,18 +123,18 @@
           Aucun flux trouvé sur RSSDI.<br />
           <a :href="rssdiUrl" target="_blank" rel="noopener" style="color:var(--accent)">Ouvrir RSSDI pour en créer →</a>
         </div>
-      </div>
 
-      <!-- Articles récents RSSDI -->
-      <div v-if="rssdiFeeds.length && rssdiArticles.length" class="mt-4">
-        <h3 class="section-title-sm">📄 Derniers articles RSSDI</h3>
-        <div class="articles-list">
-          <a v-for="art in rssdiArticles.slice(0, 20)" :key="art.id"
-            :href="art.link" target="_blank" rel="noopener" class="article-row">
-            <div class="article-feed-name">{{ art.feed_name }}</div>
-            <div class="article-title">{{ art.title }}</div>
-            <div class="article-date">{{ fmtDate(art.published_at) }}</div>
-          </a>
+        <!-- Articles récents RSSDI -->
+        <div v-if="rssdiArticles.length" class="mt-4">
+          <h3 class="section-title-sm">📄 Derniers articles RSSDI</h3>
+          <div class="articles-list">
+            <a v-for="art in rssdiArticles.slice(0, 20)" :key="art.id"
+              :href="art.link" target="_blank" rel="noopener" class="article-row">
+              <div class="article-feed-name">{{ art.feed_name }}</div>
+              <div class="article-title">{{ art.title }}</div>
+              <div class="article-date">{{ fmtDate(art.published_at) }}</div>
+            </a>
+          </div>
         </div>
       </div>
     </div>
@@ -186,38 +205,54 @@ const rssdiLoading = ref(false)
 const rssdiError = ref('')
 const rssdiFeeds = ref<any[]>([])
 const rssdiArticles = ref<any[]>([])
+const rssdiConnected = ref(false)
+const rssdiToken = ref(localStorage.getItem('fh_rssdi_token') ?? '')
 
 onMounted(async () => {
   const [f, w] = await Promise.all([api.get('/rss'), api.get('/webhooks')])
   feeds.value = f.data
   webhooks.value = w.data
+  // Auto-connecter si token sauvegardé
+  if (rssdiToken.value && activeTab.value === 'rssdi') loadRssdi()
 })
+
+function saveToken() {
+  if (rssdiToken.value) localStorage.setItem('fh_rssdi_token', rssdiToken.value)
+  else localStorage.removeItem('fh_rssdi_token')
+}
 
 function openRssdi() {
   activeTab.value = 'rssdi'
-  loadRssdi()
+  if (rssdiToken.value && !rssdiFeeds.value.length) loadRssdi()
 }
 
 async function loadRssdi() {
+  if (!rssdiToken.value) {
+    rssdiError.value = 'Entrez votre token RSSDI pour vous connecter.'
+    return
+  }
   rssdiLoading.value = true
   rssdiError.value = ''
+  rssdiConnected.value = false
+  const headers = { 'X-Rssdi-Token': rssdiToken.value }
   try {
     const [feedsRes, articlesRes] = await Promise.allSettled([
-      fetch(`${rssdiUrl}/api/feeds`, { credentials: 'include' }),
-      fetch(`${rssdiUrl}/api/articles?limit=20`, { credentials: 'include' }),
+      api.get('/rssdi/feeds', { headers }),
+      api.get('/rssdi/articles?limit=20', { headers }),
     ])
-    if (feedsRes.status === 'fulfilled' && feedsRes.value.ok) {
-      const data = await feedsRes.value.json()
-      rssdiFeeds.value = Array.isArray(data) ? data : (data.feeds ?? data.items ?? [])
+    if (feedsRes.status === 'fulfilled') {
+      rssdiFeeds.value = feedsRes.value.data
+      rssdiConnected.value = true
+      saveToken()
     } else {
-      rssdiError.value = 'Impossible d\'accéder à RSSDI. Assurez-vous d\'être connecté à votre instance.'
+      const err = (feedsRes.reason as any)?.response?.data?.hint ?? 'Token invalide ou RSSDI inaccessible.'
+      rssdiError.value = err
     }
-    if (articlesRes.status === 'fulfilled' && articlesRes.value.ok) {
-      const data = await articlesRes.value.json()
-      rssdiArticles.value = Array.isArray(data) ? data : (data.articles ?? data.items ?? [])
+    if (articlesRes.status === 'fulfilled') {
+      rssdiArticles.value = articlesRes.value.data
     }
-  } catch {
-    rssdiError.value = 'Erreur de connexion à RSSDI. Vérifiez que l\'instance est accessible.'
+  } catch (e: any) {
+    rssdiError.value = e?.response?.data?.hint ?? 'Erreur de connexion à RSSDI.'
   } finally {
     rssdiLoading.value = false
   }
@@ -317,6 +352,14 @@ async function remove(id: number) {
 .empty-state { color: var(--text-muted); padding: 48px; text-align: center; grid-column: 1 / -1; line-height: 1.8; }
 .rssdi-btn { border-color: #5865f2; color: #5865f2; }
 .rssdi-btn:hover { background: rgba(88,101,242,.15); }
+
+/* RSSDI token row */
+.rssdi-token-row { background: rgba(88,101,242,.06); border: 1px solid rgba(88,101,242,.2); border-radius: 8px; padding: 14px 18px; margin-bottom: 16px; }
+.token-label { font-size: 12px; font-weight: 700; color: var(--accent); text-transform: uppercase; margin-bottom: 8px; }
+.token-input-wrap { display: flex; gap: 8px; }
+.token-input { flex: 1; font-family: monospace; font-size: 12px; }
+.token-hint { font-size: 11px; color: var(--text-muted); margin-top: 6px; margin-bottom: 0; }
+.token-hint code { background: #202225; padding: 1px 5px; border-radius: 3px; color: #57f287; }
 
 /* RSSDI tab */
 .rssdi-banner { display: flex; align-items: center; justify-content: space-between; background: rgba(88,101,242,.1); border: 1px solid rgba(88,101,242,.3); border-radius: 8px; padding: 14px 18px; margin-bottom: 16px; }
