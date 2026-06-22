@@ -24,6 +24,14 @@
           <div class="wh-url" :title="w.url">
             {{ w.url.slice(0, 55) }}...
           </div>
+          <div class="wh-stats-row">
+            <span class="stat-chip">📨 {{ (w as any).send_count ?? 0 }} envois</span>
+            <span v-if="(w as any).last_sent" class="stat-chip">🕐 {{ relTime((w as any).last_sent) }}</span>
+            <span v-if="(w as any).send_count > 0"
+              :class="['stat-chip', successRate(w) >= 90 ? 'chip-ok' : successRate(w) >= 70 ? 'chip-warn' : 'chip-err']">
+              ✓ {{ successRate(w) }}%
+            </span>
+          </div>
           <div class="wh-actions">
             <button @click="test(w)" class="btn-secondary">🧪 Tester</button>
             <button @click="useInBuilder(w.id)" class="btn-primary">⚡ Utiliser</button>
@@ -102,6 +110,20 @@ const grouped = computed(() => {
 
 const existingCategories = computed(() => [...new Set(store.webhooks.map(w => w.category))])
 
+function successRate(w: any): number {
+  if (!w.send_count) return 0
+  return Math.round(((w.success_count ?? 0) / w.send_count) * 100)
+}
+
+function relTime(d: string): string {
+  const diff = Date.now() - new Date(d).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 60) return `il y a ${mins}min`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `il y a ${hours}h`
+  return `il y a ${Math.floor(hours / 24)}j`
+}
+
 onMounted(() => store.load())
 
 function openForm(w?: Webhook) {
@@ -162,5 +184,10 @@ async function remove(w: Webhook) {
 .wh-username { font-size: 12px; color: var(--text-muted); }
 .wh-url { font-size: 11px; color: var(--text-muted); margin-bottom: 10px; word-break: break-all; font-family: monospace; }
 .wh-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.wh-stats-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.stat-chip { background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 12px; padding: 2px 9px; font-size: 11px; color: var(--text-muted); }
+.chip-ok { background: rgba(87,242,135,.1); color: #57f287; border-color: rgba(87,242,135,.3); }
+.chip-warn { background: rgba(255,163,67,.1); color: #ffa343; border-color: rgba(255,163,67,.3); }
+.chip-err { background: rgba(237,66,69,.1); color: #ed4245; border-color: rgba(237,66,69,.3); }
 .empty-state { color: var(--text-muted); text-align: center; padding: 48px; }
 </style>

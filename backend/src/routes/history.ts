@@ -5,17 +5,69 @@ import { getDb } from '../db/index.js'
 export const historyRoutes = new Hono()
 historyRoutes.use('*', requireAuth)
 
+historyRoutes.get('/stats', (c) => {
+  const db = getDb()
+  const total = (db.prepare('SELECT COUNT(*) as n FROM history').get() as any).n
+  const success = (db.prepare('SELECT COUNT(*) as n FROM history WHERE status < 400').get() as any).n
+  const errors = total - success
+  const byDay = db.prepare(
+    `SELECT date(sent_at) as day, COUNT(*) as n FROM history
+     WHERE sent_at >= date('now', '-7 days')
+     GROUP BY day ORDER BY day`
+  ).all()
+  const topWebhooks = db.prepare(
+    `SELECT webhook_name, COUNT(*) as n FROM history
+     WHERE webhook_name IS NOT NULL
+     GROUP BY webhook_name ORDER BY n DESC LIMIT 5`
+  ).all()
+  return c.json({ total, success, errors, byDay, topWebhooks })
+})
+
+historyRoutes.get('/export.csv', (c) => {
+  const rows = getDb().prepare(
+    'SELECT id, webhook_name, status, error, sent_at, send_type FROM history ORDER BY sent_at DESC'
+  ).all() as any[]
+  const escape = (s: string | null) => `"${(s ?? '').replace(/"/g, '""')}"`
+  const lines = ['id,webhook_name,status,error,sent_at,send_type']
+  rows.forEach(r => lines.push(`${r.id},${escape(r.webhook_name)},${r.status},${escape(r.error)},${r.sent_at},${r.send_type ?? 'webhook'}`))
+  return new Response(lines.join('\n'), {
+    headers: {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="forgehook-history.csv"',
+    },
+  })
+})
+
 historyRoutes.get('/', (c) => {
+  const { q, status, from, to } = c.req.query()
   const limit = Math.min(Number(c.req.query('limit') ?? 50), 200)
   const offset = Number(c.req.query('offset') ?? 0)
-  const webhookId = c.req.query('webhook_id')
-  const query = webhookId
-    ? 'SELECT * FROM history WHERE webhook_id=? ORDER BY sent_at DESC LIMIT ? OFFSET ?'
-    : 'SELECT * FROM history ORDER BY sent_at DESC LIMIT ? OFFSET ?'
-  const rows = webhookId
-    ? getDb().prepare(query).all(webhookId, limit, offset)
-    : getDb().prepare(query).all(limit, offset)
+
+  const conditions: string[] = ['1=1']
+  const params: (string | number)[] = []
+
+  if (q) {
+    conditions.push('(webhook_name LIKE ? OR payload LIKE ?)')
+    params.push(`%${q}%`, `%${q}%`)
+  }
+  if (status === 'ok') conditions.push('status < 400')
+  else if (status === 'error') conditions.push('status >= 400')
+  if (from) { conditions.push('sent_at >= ?'); params.push(from) }
+  if (to) { conditions.push('sent_at <= ?'); params.push(to) }
+
+  const where = conditions.join(' AND ')
+  const rows = getDb().prepare(
+    `SELECT * FROM history WHERE ${where} ORDER BY sent_at DESC LIMIT ? OFFSET ?`
+  ).all(...params, limit, offset)
   return c.json(rows)
+})
+
+historyRoutes.delete('/bulk', async (c) => {
+  const body = await c.req.json() as { ids: number[] }
+  if (!Array.isArray(body.ids) || body.ids.length === 0) return c.json({ error: 'ids required' }, 400)
+  const placeholders = body.ids.map(() => '?').join(',')
+  const result = getDb().prepare(`DELETE FROM history WHERE id IN (${placeholders})`).run(...body.ids)
+  return c.json({ ok: true, deleted: result.changes })
 })
 
 historyRoutes.delete('/:id', (c) => {

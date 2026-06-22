@@ -6,7 +6,7 @@
     </div>
 
     <div class="grid-2">
-      <div v-for="j in jobs" :key="j.id" class="card">
+      <div v-for="j in jobs" :key="j.id" class="card job-card">
         <div class="job-header">
           <span :class="['badge', j.enabled ? 'badge-success' : 'badge-error']">
             {{ j.enabled ? '▶ Actif' : '⏸ Pausé' }}
@@ -19,12 +19,18 @@
         </div>
         <div class="job-meta">
           <span>Webhook: {{ webhookName(j.webhook_id) }}</span>
-          <span v-if="j.last_run">Dernier: {{ fmtDate(j.last_run) }}</span>
+          <span v-if="j.last_run">Dernier run: {{ relTime(j.last_run) }}</span>
+          <span v-else class="never-run">Jamais exécuté</span>
         </div>
         <div class="job-actions">
           <button @click="toggle(j)" :class="j.enabled ? 'btn-secondary' : 'btn-primary'">
             {{ j.enabled ? '⏸' : '▶' }}
           </button>
+          <button @click="runNow(j.id)" class="btn-secondary" :disabled="running === j.id" title="Tester maintenant">
+            {{ running === j.id ? '⏳' : '⚡ Tester' }}
+          </button>
+          <button @click="openEdit(j)" class="btn-secondary" title="Modifier">✏️</button>
+          <button @click="cloneJob(j)" class="btn-secondary" title="Cloner">⎘</button>
           <button @click="remove(j.id)" class="btn-danger-sm">🗑</button>
         </div>
       </div>
@@ -33,7 +39,7 @@
 
     <div v-if="showForm" class="modal-overlay" @click.self="showForm = false">
       <div class="modal" style="max-width:580px">
-        <h3>Nouveau job planifié</h3>
+        <h3>{{ editing ? 'Modifier job' : 'Nouveau job planifié' }}</h3>
         <div class="section">
           <label class="fh-label">Nom *</label>
           <input v-model="form.name" placeholder="Ex: Rapport quotidien" class="fh-input" autofocus />
@@ -63,7 +69,7 @@
         </div>
         <p v-if="formError" class="error">{{ formError }}</p>
         <div class="modal-actions">
-          <button @click="submit" class="btn-primary">Créer</button>
+          <button @click="submit" class="btn-primary">{{ editing ? 'Modifier' : 'Créer' }}</button>
           <button @click="showForm = false" class="btn-secondary">Annuler</button>
         </div>
       </div>
@@ -81,8 +87,10 @@ const ui = useUiStore()
 const jobs = ref<ScheduledJob[]>([])
 const webhooks = ref<Webhook[]>([])
 const showForm = ref(false)
+const editing = ref<ScheduledJob | null>(null)
 const formError = ref('')
 const form = ref({ name: '', webhook_id: 0, cron_expr: '0 9 * * 1-5', payloadStr: '{"content":"Message planifié"}' })
+const running = ref<number | null>(null)
 
 const cronPresets = [
   { label: 'Chaque minute', expr: '* * * * *' },
@@ -103,8 +111,15 @@ function webhookName(id: number): string {
   return webhooks.value.find(w => w.id === id)?.name ?? `#${id}`
 }
 
-function fmtDate(d: string): string {
-  return new Date(d).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+function relTime(d: string): string {
+  if (!d) return ''
+  const diff = Date.now() - new Date(d).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'il y a quelques secondes'
+  if (mins < 60) return `il y a ${mins}min`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `il y a ${hours}h`
+  return `il y a ${Math.floor(hours / 24)}j`
 }
 
 function describeCron(expr: string): string {
@@ -119,6 +134,57 @@ function describeCron(expr: string): string {
   return map[expr] ?? ''
 }
 
+async function runNow(id: number) {
+  running.value = id
+  try {
+    await api.post(`/scheduler/${id}/run`)
+    ui.notify('Job exécuté manuellement ✅')
+    const { data } = await api.get('/scheduler')
+    jobs.value = data
+  } catch (e: any) {
+    ui.notify(e.response?.data?.error ?? "Erreur d'exécution", 'error')
+  } finally {
+    running.value = null
+  }
+}
+
+async function cloneJob(j: ScheduledJob) {
+  try {
+    let payload: object = {}
+    if (j.payload) {
+      try { payload = typeof j.payload === 'string' ? JSON.parse(j.payload) : j.payload } catch {}
+    }
+    await api.post('/scheduler', {
+      name: `${j.name} (copie)`,
+      webhook_id: j.webhook_id,
+      cron_expr: j.cron_expr,
+      payload,
+      enabled: false,
+    })
+    const { data } = await api.get('/scheduler')
+    jobs.value = data
+    ui.notify('Job cloné — désactivé par défaut')
+  } catch {
+    ui.notify('Erreur lors du clonage', 'error')
+  }
+}
+
+function openForm() {
+  editing.value = null
+  form.value = { name: '', webhook_id: 0, cron_expr: '0 9 * * 1-5', payloadStr: '{"content":"Message planifié"}' }
+  formError.value = ''
+  showForm.value = true
+}
+
+function openEdit(j: ScheduledJob) {
+  editing.value = j
+  let payloadStr = '{"content":""}'
+  try { payloadStr = JSON.stringify(typeof j.payload === 'string' ? JSON.parse(j.payload) : j.payload, null, 2) } catch {}
+  form.value = { name: j.name, webhook_id: j.webhook_id, cron_expr: j.cron_expr, payloadStr }
+  formError.value = ''
+  showForm.value = true
+}
+
 async function submit() {
   formError.value = ''
   if (!form.value.name || !form.value.webhook_id || !form.value.cron_expr) {
@@ -128,11 +194,16 @@ async function submit() {
   let payload: object
   try { payload = JSON.parse(form.value.payloadStr) } catch { formError.value = 'JSON payload invalide'; return }
   try {
-    await api.post('/scheduler', { name: form.value.name, webhook_id: form.value.webhook_id, cron_expr: form.value.cron_expr, payload, enabled: true })
+    if (editing.value) {
+      await api.put(`/scheduler/${editing.value.id}`, { name: form.value.name, webhook_id: form.value.webhook_id, cron_expr: form.value.cron_expr, payload })
+    } else {
+      await api.post('/scheduler', { name: form.value.name, webhook_id: form.value.webhook_id, cron_expr: form.value.cron_expr, payload, enabled: true })
+    }
     const { data } = await api.get('/scheduler')
     jobs.value = data
     showForm.value = false
-    ui.notify('Job planifié créé !')
+    ui.notify(editing.value ? 'Job modifié !' : 'Job planifié créé !')
+    editing.value = null
   } catch (e: any) {
     formError.value = e.response?.data?.error ?? 'Erreur'
   }
@@ -149,22 +220,18 @@ async function remove(id: number) {
   jobs.value = jobs.value.filter(j => j.id !== id)
   ui.notify('Job supprimé')
 }
-
-function openForm() {
-  form.value = { name: '', webhook_id: 0, cron_expr: '0 9 * * 1-5', payloadStr: '{"content":"Message planifié"}' }
-  formError.value = ''
-  showForm.value = true
-}
 </script>
 
 <style scoped>
-.job-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.job-card { display: flex; flex-direction: column; gap: 4px; }
+.job-header { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
 .job-name { font-weight: 700; font-size: 15px; color: #fff; }
-.job-cron { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.job-cron { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .job-cron code { background: #202225; padding: 2px 8px; border-radius: 4px; font-size: 13px; color: #57f287; }
 .cron-desc { font-size: 12px; color: var(--text-muted); }
-.job-meta { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
-.job-actions { display: flex; gap: 6px; }
+.job-meta { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+.never-run { color: #72767d; font-style: italic; }
+.job-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .cron-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .preset-btn { font-size: 11px; padding: 4px 10px; }
 .empty-state { color: var(--text-muted); padding: 48px; text-align: center; grid-column: 1 / -1; }

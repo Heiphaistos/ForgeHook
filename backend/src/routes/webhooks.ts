@@ -15,7 +15,16 @@ export const webhookRoutes = new Hono()
 webhookRoutes.use('*', requireAuth)
 
 webhookRoutes.get('/', (c) => {
-  const rows = getDb().prepare('SELECT * FROM webhooks ORDER BY category, name').all()
+  const rows = getDb().prepare(
+    `SELECT w.*,
+      COUNT(h.id) as send_count,
+      MAX(h.sent_at) as last_sent,
+      SUM(CASE WHEN h.status < 400 THEN 1 ELSE 0 END) as success_count
+     FROM webhooks w
+     LEFT JOIN history h ON h.webhook_id = w.id
+     GROUP BY w.id
+     ORDER BY w.category, w.name`
+  ).all()
   return c.json(rows)
 })
 

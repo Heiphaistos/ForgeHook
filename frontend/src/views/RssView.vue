@@ -40,7 +40,10 @@
             <button @click="toggle(f)" :class="f.enabled ? 'btn-secondary' : 'btn-primary'">
               {{ f.enabled ? '⏸ Pause' : '▶ Activer' }}
             </button>
-            <button @click="openForm(f)" class="btn-secondary">✏️ Modifier</button>
+            <button @click="triggerFeed(f.id)" class="btn-secondary" :disabled="triggering === f.id" title="Déclencher maintenant">
+              {{ triggering === f.id ? '⏳...' : '⚡ Déclencher' }}
+            </button>
+            <button @click="openForm(f)" class="btn-secondary">✏️</button>
             <button @click="remove(f.id)" class="btn-danger-sm">🗑</button>
           </div>
         </div>
@@ -177,6 +180,7 @@ const form = ref({ name: '', url: '', webhook_id: 0, check_interval: 3600, templ
 const activeTab = ref<'feeds' | 'rssdi'>('feeds')
 
 // RSSDI integration
+const triggering = ref<number | null>(null)
 const rssdiUrl = import.meta.env.VITE_RSSDI_URL ?? 'https://rssdi.heiphaistos.org'
 const rssdiLoading = ref(false)
 const rssdiError = ref('')
@@ -265,6 +269,20 @@ async function submit() {
     ui.notify(editing.value ? 'Flux modifié' : 'Flux ajouté !')
   } catch (e: any) {
     formError.value = e.response?.data?.error ?? 'Erreur'
+  }
+}
+
+async function triggerFeed(id: number) {
+  triggering.value = id
+  try {
+    await api.post(`/rss/${id}/trigger`)
+    ui.notify('Flux déclenché — vérification en cours...')
+    const { data } = await api.get('/rss')
+    feeds.value = data
+  } catch {
+    ui.notify('Erreur lors du déclenchement', 'error')
+  } finally {
+    triggering.value = null
   }
 }
 

@@ -31,6 +31,20 @@ export function startScheduler(): void {
   console.log(`[scheduler] ${jobs.length} job(s) loaded`)
 }
 
+export async function runJobNow(jobId: number): Promise<{ ok: boolean; status?: number }> {
+  const db = getDb()
+  const job = db.prepare('SELECT * FROM scheduled_jobs WHERE id=?').get(jobId) as any
+  if (!job) return { ok: false }
+  const webhook = db.prepare('SELECT * FROM webhooks WHERE id=?').get(job.webhook_id) as any
+  if (!webhook) return { ok: false }
+  const payload = JSON.parse(job.payload)
+  const result = await sendWebhook(webhook.url, payload)
+  db.prepare('UPDATE scheduled_jobs SET last_run=datetime("now") WHERE id=?').run(job.id)
+  db.prepare('INSERT INTO history (webhook_id, webhook_name, payload, status, error) VALUES (?,?,?,?,?)')
+    .run(webhook.id, webhook.name, job.payload, result.status, result.error ?? null)
+  return { ok: result.ok, status: result.status }
+}
+
 export function reloadJob(jobId: number): void {
   const job = getDb().prepare('SELECT * FROM scheduled_jobs WHERE id=?').get(jobId) as any
   if (!job) { activeTasks.get(jobId)?.stop(); activeTasks.delete(jobId); return }

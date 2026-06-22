@@ -17,6 +17,14 @@ export function getDb(): Database.Database {
     db.pragma('foreign_keys = ON')
     const schema = readFileSync(join(__dirname, 'schema.sql'), 'utf-8')
     db.exec(schema)
+    const migrations = [
+      'ALTER TABLE history ADD COLUMN bot_id INTEGER',
+      'ALTER TABLE history ADD COLUMN channel_id TEXT',
+      "ALTER TABLE history ADD COLUMN send_type TEXT DEFAULT 'webhook'",
+    ]
+    for (const m of migrations) {
+      try { db.exec(m) } catch { /* column already exists */ }
+    }
   }
   return db
 }

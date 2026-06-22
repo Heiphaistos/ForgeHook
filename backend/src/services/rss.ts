@@ -4,7 +4,7 @@ import { sendWebhook } from './discord.js'
 
 const parser = new Parser()
 
-async function checkFeed(feed: any): Promise<void> {
+export async function checkFeed(feed: any): Promise<void> {
   const db = getDb()
   try {
     const parsed = await parser.parseURL(feed.url)

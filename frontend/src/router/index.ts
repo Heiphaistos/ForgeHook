@@ -17,6 +17,7 @@ const router = createRouter({
     { path: '/history', component: () => import('../views/HistoryView.vue'), meta: { requiresAuth: true } },
     { path: '/templates', component: () => import('../views/TemplatesView.vue'), meta: { requiresAuth: true } },
     { path: '/fonts', component: () => import('../views/DiscordFontsView.vue'), meta: { requiresAuth: true } },
+    { path: '/media', component: () => import('../views/MediaManagerView.vue'), meta: { requiresAuth: true } },
   ],
 })
 

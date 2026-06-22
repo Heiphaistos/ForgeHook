@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { requireAuth } from '../middleware/auth.js'
 import { getDb } from '../db/index.js'
+import { checkFeed } from '../services/rss.js'
 import { z } from 'zod'
 
 const feedSchema = z.object({
@@ -41,6 +42,14 @@ rssRoutes.patch('/:id/toggle', (c) => {
   const feed = getDb().prepare('SELECT enabled FROM rss_feeds WHERE id=?').get(id) as any
   if (!feed) return c.json({ error: 'Not found' }, 404)
   getDb().prepare('UPDATE rss_feeds SET enabled=? WHERE id=?').run(feed.enabled ? 0 : 1, id)
+  return c.json({ ok: true })
+})
+
+rssRoutes.post('/:id/trigger', async (c) => {
+  const id = Number(c.req.param('id'))
+  const feed = getDb().prepare('SELECT * FROM rss_feeds WHERE id=?').get(id) as any
+  if (!feed) return c.json({ error: 'Not found' }, 404)
+  await checkFeed(feed)
   return c.json({ ok: true })
 })
 

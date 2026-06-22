@@ -44,6 +44,7 @@ const navItems = [
   { to: '/history', icon: '📜', label: 'Historique' },
   { to: '/templates', icon: '📋', label: 'Templates' },
   { to: '/fonts', icon: '🔤', label: 'Discord Fonts' },
+  { to: '/media', icon: '🖼️', label: 'Médias' },
 ]
 
 function logout() {

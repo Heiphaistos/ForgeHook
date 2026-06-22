@@ -69,4 +69,7 @@ export interface HistoryEntry {
   status: number
   error: string | null
   sent_at: string
+  send_type?: string
+  bot_id?: number | null
+  channel_id?: string | null
 }
