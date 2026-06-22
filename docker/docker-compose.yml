@@ -1,0 +1,37 @@
+services:
+  forgehook-backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    env_file: ../.env
+    volumes:
+      - forgehook-data:/app/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3020/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  forgehook-frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    ports:
+      - "127.0.0.1:3025:80"
+    networks:
+      - internal
+    depends_on:
+      forgehook-backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  forgehook-data:

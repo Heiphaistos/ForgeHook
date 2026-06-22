@@ -1,0 +1,10 @@
+﻿node_modules/
+dist/
+.env
+*.db
+data/
+.logs/
+target/
+src-tauri/target/
+desktop/node_modules/
+frontend/node_modules/
