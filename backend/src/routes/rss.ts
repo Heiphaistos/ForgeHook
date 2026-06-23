@@ -4,9 +4,21 @@ import { getDb } from '../db/index.js'
 import { checkFeed } from '../services/rss.js'
 import { z } from 'zod'
 
+const SSRF_BLOCK = /^(localhost|127\.\d+\.\d+\.\d+|::1|0\.0\.0\.0|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|169\.254\.\d+\.\d+|fd[0-9a-f]{2}:|fc[0-9a-f]{2}:)$/i
+
+function isSafeUrl(raw: string): boolean {
+  try {
+    const { protocol, hostname } = new URL(raw)
+    if (protocol !== 'http:' && protocol !== 'https:') return false
+    return !SSRF_BLOCK.test(hostname)
+  } catch {
+    return false
+  }
+}
+
 const feedSchema = z.object({
   name: z.string().min(1).max(100),
-  url: z.string().url(),
+  url: z.string().url().refine(isSafeUrl, 'URL non autorisée (IP privée ou protocole invalide)'),
   webhook_id: z.number().int().positive(),
   check_interval: z.number().int().min(60).default(3600),
   template: z.string().optional(),

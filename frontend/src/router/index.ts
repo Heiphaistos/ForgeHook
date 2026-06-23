@@ -1,10 +1,11 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useAuthStore } from '../stores/auth'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login', component: () => import('../views/LoginView.vue') },
-    { path: '/setup', component: () => import('../views/SetupView.vue') },
+    { path: '/setup', component: () => import('../views/SetupView.vue'), meta: { requiresUnconfigured: true } },
     { path: '/', component: () => import('../views/DashboardView.vue'), meta: { requiresAuth: true } },
     { path: '/embed', component: () => import('../views/EmbedBuilderView.vue'), meta: { requiresAuth: true } },
     { path: '/webhooks', component: () => import('../views/WebhooksView.vue'), meta: { requiresAuth: true } },
@@ -24,6 +25,12 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   const token = localStorage.getItem('fh_token')
   if (to.meta.requiresAuth && !token) return '/login'
+
+  if (to.meta.requiresUnconfigured) {
+    const auth = useAuthStore()
+    try { await auth.checkStatus() } catch {}
+    if (auth.configured) return '/login'
+  }
 })
 
 export default router

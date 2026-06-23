@@ -17,11 +17,16 @@ import { startScheduler } from './services/scheduler.js'
 import { startRssPoller } from './services/rss.js'
 import { mkdirSync } from 'fs'
 
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'changeme' || process.env.JWT_SECRET === 'change_this_to_a_random_64_char_string') {
+  console.error('[FATAL] JWT_SECRET non défini ou valeur par défaut — définir une valeur aléatoire dans .env')
+  process.exit(1)
+}
+
 const app = new Hono()
 
 app.use('*', logger())
 app.use('*', cors({
-  origin: process.env.ALLOWED_ORIGIN ?? '*',
+  origin: process.env.ALLOWED_ORIGIN ?? 'https://forgehook.heiphaistos.org',
   credentials: true,
 }))
 
@@ -38,7 +43,7 @@ app.route('/api/uploads', uploadRoutes)
 app.route('/api/rssdi', rssdiRoutes)
 mkdirSync(process.env.UPLOAD_DIR ?? '/app/data/uploads', { recursive: true })
 
-app.get('/health', (c) => c.json({ ok: true, version: '2.1.0', app: 'forgehook' }))
+app.get('/health', (c) => c.json({ ok: true, version: '2.2.0', app: 'forgehook' }))
 
 app.onError((err, c) => {
   console.error('[error]', err)

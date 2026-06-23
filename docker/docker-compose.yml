@@ -8,6 +8,9 @@ services:
       - forgehook-data:/app/data
     networks:
       - internal
+      - forgehook-shared
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3020/health"]
       interval: 30s
@@ -32,6 +35,8 @@ services:
 networks:
   internal:
     driver: bridge
+  forgehook-shared:
+    external: true
 
 volumes:
   forgehook-data:

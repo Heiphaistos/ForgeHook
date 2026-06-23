@@ -7,7 +7,7 @@ export const requireAuth = createMiddleware(async (c, next) => {
   const token = header?.startsWith('Bearer ') ? header.slice(7) : null
   if (!token) return c.json({ error: 'Unauthorized' }, 401)
   try {
-    const payload = verify(token, process.env.JWT_SECRET ?? 'changeme') as { id: number }
+    const payload = verify(token, process.env.JWT_SECRET!) as { id: number }
     c.set('userId' as never, payload.id)
     await next()
   } catch {
