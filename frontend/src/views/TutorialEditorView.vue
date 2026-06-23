@@ -1,5 +1,6 @@
 <template>
   <div class="tutorial-editor">
+    <input ref="imageFileInput" type="file" accept="image/*" style="display:none" @change="handleImageUpload" />
     <div class="editor-topbar">
       <input v-model="tutorial.title" placeholder="Titre du tutoriel..." class="fh-input title-input" />
       <div class="topbar-actions">
@@ -43,7 +44,12 @@
 
         <!-- Image block -->
         <div v-else-if="block.type === 'image'" class="block-content">
-          <input v-model="block.content.url" placeholder="URL de l'image" class="fh-input" />
+          <div class="img-upload-row">
+            <input v-model="block.content.url" placeholder="URL de l'image" class="fh-input" />
+            <button @click="triggerImageUpload(i)" class="btn-secondary upload-btn" :disabled="uploadingIdx === i" title="Uploader une image">
+              {{ uploadingIdx === i ? '⏳' : '📤' }}
+            </button>
+          </div>
           <input v-model="block.content.caption" placeholder="Légende (optionnel)" class="fh-input mt-1" />
           <div v-if="block.content.url" class="img-preview">
             <img :src="block.content.url" alt="" @error="($event.target as HTMLImageElement).style.display='none'" />
@@ -170,6 +176,9 @@ const router = useRouter()
 const previewMode = ref(false)
 const saving = ref(false)
 const saveMsg = ref('')
+const imageFileInput = ref<HTMLInputElement | null>(null)
+const uploadingIdx = ref<number | null>(null)
+let uploadTargetIdx = -1
 const showTplModal = ref(false)
 
 const tutorial = ref<Tutorial>({ id: 0, title: '', description: '', blocks: [], published: 0 })
@@ -310,6 +319,29 @@ function addBlock(type: string) {
 
 function removeBlock(i: number) { tutorial.value.blocks.splice(i, 1) }
 
+function triggerImageUpload(idx: number) {
+  uploadTargetIdx = idx
+  imageFileInput.value?.click()
+}
+
+async function handleImageUpload(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file || uploadTargetIdx < 0) return
+  const idx = uploadTargetIdx
+  uploadingIdx.value = idx
+  try {
+    const form = new FormData()
+    form.append('file', file)
+    const { data } = await api.post('/uploads', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+    tutorial.value.blocks[idx].content.url = data.url
+  } catch {
+    // silently ignore upload errors — URL field stays empty
+  } finally {
+    uploadingIdx.value = null
+    if (imageFileInput.value) imageFileInput.value.value = ''
+  }
+}
+
 function moveBlock(i: number, dir: -1 | 1) {
   const b = tutorial.value.blocks
   const j = i + dir
@@ -389,6 +421,8 @@ function youtubeEmbed(url: string): string {
 .block-content { padding: 14px; }
 .block-textarea { min-height: 100px; }
 .code-ta { font-family: 'Consolas', monospace; font-size: 13px; }
+.img-upload-row { display: flex; gap: 6px; align-items: center; }
+.upload-btn { padding: 6px 10px; flex-shrink: 0; }
 .img-preview { margin-top: 10px; }
 .img-preview img { max-width: 100%; max-height: 300px; border-radius: 6px; object-fit: cover; }
 .video-embed-preview { margin-top: 10px; }
