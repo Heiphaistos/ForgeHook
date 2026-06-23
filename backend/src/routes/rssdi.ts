@@ -15,11 +15,17 @@ async function proxyRssdi(path: string, token: string | null): Promise<Response>
   })
 }
 
+// Convertit les codes d'erreur RSSDI en 422 pour ne jamais déclencher
+// le logout côté browser (l'intercepteur axios logout uniquement sur 401)
+function rssdiStatus(status: number): 422 | 502 {
+  return status >= 500 ? 502 : 422
+}
+
 rssdiRoutes.get('/me', async (c) => {
   const token = c.req.header('X-Rssdi-Token') ?? null
   try {
     const res = await proxyRssdi('/api/v1/auth/me', token)
-    if (!res.ok) return c.json({ error: `RSSDI ${res.status}`, hint: 'Token invalide ou expiré' }, res.status as any)
+    if (!res.ok) return c.json({ error: `RSSDI ${res.status}`, hint: 'Token invalide ou expiré' }, rssdiStatus(res.status))
     return c.json(await res.json())
   } catch (e: any) {
     return c.json({ error: 'RSSDI inaccessible', hint: e.message }, 502)
@@ -30,7 +36,7 @@ rssdiRoutes.get('/feeds', async (c) => {
   const token = c.req.header('X-Rssdi-Token') ?? null
   try {
     const res = await proxyRssdi('/api/v1/fluxes', token)
-    if (!res.ok) return c.json({ error: `RSSDI ${res.status}`, hint: 'Token invalide ou RSSDI inaccessible' }, res.status as any)
+    if (!res.ok) return c.json({ error: `RSSDI ${res.status}`, hint: 'Token invalide ou RSSDI inaccessible' }, rssdiStatus(res.status))
     const data = await res.json() as any
     const feeds = Array.isArray(data) ? data : (data.feeds ?? data.items ?? [])
     return c.json(feeds)
