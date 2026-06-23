@@ -298,6 +298,7 @@ async function duplicate(t: Template) {
 }
 
 async function remove(id: number) {
+  if (!confirm('Supprimer ce template ?')) return
   await api.delete(`/templates/${id}`)
   templates.value = templates.value.filter(t => t.id !== id)
   ui.notify('Template supprimé')

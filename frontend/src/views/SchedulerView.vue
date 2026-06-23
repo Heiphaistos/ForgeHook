@@ -216,6 +216,7 @@ async function toggle(j: ScheduledJob) {
 }
 
 async function remove(id: number) {
+  if (!confirm('Supprimer ce job planifié ?')) return
   await api.delete(`/scheduler/${id}`)
   jobs.value = jobs.value.filter(j => j.id !== id)
   ui.notify('Job supprimé')

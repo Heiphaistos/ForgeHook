@@ -71,7 +71,12 @@
 
       <!-- Token RSSDI -->
       <div class="rssdi-token-row">
-        <div class="token-label">🔑 Token RSSDI (JWT)</div>
+        <div class="token-label-row">
+          <div class="token-label">🔑 Token RSSDI (JWT)</div>
+          <div v-if="rssdiUser" class="rssdi-connected-badge">
+            ✅ Connecté en tant que <strong>{{ rssdiUser.username }}</strong>
+          </div>
+        </div>
         <div class="token-input-wrap">
           <input
             v-model="rssdiToken"
@@ -83,7 +88,7 @@
           <button @click="loadRssdi" class="btn-primary">🔗 Connecter</button>
         </div>
         <p class="token-hint">
-          Sur RSSDI → DevTools → Application → localStorage → <code>token</code>
+          Sur RSSDI → DevTools → Application → localStorage → <code>rssdi_token</code>
           (ou Network → n'importe quelle requête → Authorization: Bearer …)
         </p>
       </div>
@@ -101,11 +106,11 @@
           <div v-for="f in rssdiFeeds" :key="f.id" class="rssdi-card">
             <div class="rssdi-card-top">
               <div class="rssdi-card-name">{{ f.name }}</div>
-              <span :class="['badge', f.enabled ? 'badge-success' : 'badge-error']" style="font-size:10px">
-                {{ f.enabled ? 'Actif' : 'Inactif' }}
+              <span :class="['badge', f.active ? 'badge-success' : 'badge-error']" style="font-size:10px">
+                {{ f.active ? 'Actif' : 'Inactif' }}
               </span>
             </div>
-            <div class="rssdi-card-url">{{ f.url }}</div>
+            <div class="rssdi-card-url">{{ f.rssUrl }}</div>
             <div class="rssdi-card-meta" v-if="f.last_checked">
               Dernier check: {{ fmtDate(f.last_checked) }}
             </div>
@@ -124,18 +129,6 @@
           <a :href="rssdiUrl" target="_blank" rel="noopener" style="color:var(--accent)">Ouvrir RSSDI pour en créer →</a>
         </div>
 
-        <!-- Articles récents RSSDI -->
-        <div v-if="rssdiArticles.length" class="mt-4">
-          <h3 class="section-title-sm">📄 Derniers articles RSSDI</h3>
-          <div class="articles-list">
-            <a v-for="art in rssdiArticles.slice(0, 20)" :key="art.id"
-              :href="art.link" target="_blank" rel="noopener" class="article-row">
-              <div class="article-feed-name">{{ art.feed_name }}</div>
-              <div class="article-title">{{ art.title }}</div>
-              <div class="article-date">{{ fmtDate(art.published_at) }}</div>
-            </a>
-          </div>
-        </div>
       </div>
     </div>
 
@@ -204,8 +197,8 @@ const rssdiUrl = import.meta.env.VITE_RSSDI_URL ?? 'https://rssdi.heiphaistos.or
 const rssdiLoading = ref(false)
 const rssdiError = ref('')
 const rssdiFeeds = ref<any[]>([])
-const rssdiArticles = ref<any[]>([])
 const rssdiConnected = ref(false)
+const rssdiUser = ref<{ username: string; email?: string } | null>(null)
 const rssdiToken = ref(localStorage.getItem('fh_rssdi_token') ?? '')
 
 onMounted(async () => {
@@ -234,11 +227,12 @@ async function loadRssdi() {
   rssdiLoading.value = true
   rssdiError.value = ''
   rssdiConnected.value = false
+  rssdiUser.value = null
   const headers = { 'X-Rssdi-Token': rssdiToken.value }
   try {
-    const [feedsRes, articlesRes] = await Promise.allSettled([
+    const [feedsRes, meRes] = await Promise.allSettled([
       api.get('/rssdi/feeds', { headers }),
-      api.get('/rssdi/articles?limit=20', { headers }),
+      api.get('/rssdi/me', { headers }),
     ])
     if (feedsRes.status === 'fulfilled') {
       rssdiFeeds.value = feedsRes.value.data
@@ -248,8 +242,8 @@ async function loadRssdi() {
       const err = (feedsRes.reason as any)?.response?.data?.hint ?? 'Token invalide ou RSSDI inaccessible.'
       rssdiError.value = err
     }
-    if (articlesRes.status === 'fulfilled') {
-      rssdiArticles.value = articlesRes.value.data
+    if (meRes.status === 'fulfilled') {
+      rssdiUser.value = meRes.value.data
     }
   } catch (e: any) {
     rssdiError.value = e?.response?.data?.hint ?? 'Erreur de connexion à RSSDI.'
@@ -260,10 +254,10 @@ async function loadRssdi() {
 
 function importFromRssdi(rssdiF: any) {
   form.value = {
-    name: rssdiF.name ?? rssdiF.title ?? 'Flux importé',
-    url: rssdiF.url ?? rssdiF.feed_url ?? '',
+    name: rssdiF.name ?? 'Flux importé',
+    url: rssdiF.rssUrl ?? rssdiF.url ?? '',
     webhook_id: webhooks.value[0]?.id ?? 0,
-    check_interval: 3600,
+    check_interval: rssdiF.interval ?? 3600,
     template: '',
     enabled: true,
   }
@@ -328,6 +322,7 @@ async function toggle(f: RssFeed) {
 }
 
 async function remove(id: number) {
+  if (!confirm('Supprimer ce flux RSS ?')) return
   await api.delete(`/rss/${id}`)
   feeds.value = feeds.value.filter(f => f.id !== id)
   ui.notify('Flux supprimé')
@@ -355,7 +350,9 @@ async function remove(id: number) {
 
 /* RSSDI token row */
 .rssdi-token-row { background: rgba(88,101,242,.06); border: 1px solid rgba(88,101,242,.2); border-radius: 8px; padding: 14px 18px; margin-bottom: 16px; }
-.token-label { font-size: 12px; font-weight: 700; color: var(--accent); text-transform: uppercase; margin-bottom: 8px; }
+.token-label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.token-label { font-size: 12px; font-weight: 700; color: var(--accent); text-transform: uppercase; }
+.rssdi-connected-badge { font-size: 12px; color: #57f287; background: rgba(87,242,135,.1); border: 1px solid rgba(87,242,135,.3); border-radius: 12px; padding: 2px 10px; }
 .token-input-wrap { display: flex; gap: 8px; }
 .token-input { flex: 1; font-family: monospace; font-size: 12px; }
 .token-hint { font-size: 11px; color: var(--text-muted); margin-top: 6px; margin-bottom: 0; }

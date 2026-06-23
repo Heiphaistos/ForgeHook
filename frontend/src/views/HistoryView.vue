@@ -154,6 +154,7 @@ function toggleSelect(id: number) {
 }
 
 async function deleteSelected() {
+  if (!confirm(`Supprimer ${selected.value.size} entrée(s) ?`)) return
   await api.delete('/history/bulk', { data: { ids: [...selected.value] } })
   history.value = history.value.filter(h => !selected.value.has(h.id))
   selected.value = new Set()
@@ -190,6 +191,7 @@ async function remove(id: number) {
 }
 
 async function clearAll() {
+  if (!confirm('Effacer tout l\'historique ? Cette action est irréversible.')) return
   await api.delete('/history')
   history.value = []
   await loadStats()

@@ -2,7 +2,7 @@
   <div class="page">
     <div class="page-header">
       <h1>📊 Dashboard</h1>
-      <div style="font-size:12px;color:var(--text-muted)">ForgeHook v2.0.0</div>
+      <div style="font-size:12px;color:var(--text-muted)">ForgeHook v2.1.0</div>
     </div>
 
     <!-- Stats cards -->
@@ -109,6 +109,7 @@ import { ref, computed, onMounted } from 'vue'
 import api from '../api/client'
 import type { HistoryEntry } from '../types/app'
 
+const counts = ref({ webhooks: 0, bots: 0, templates: 0, rss: 0, jobs: 0 })
 const botStatus = ref<{ online: boolean; guilds?: number; users?: number; commands_today?: number; uptime?: string; error?: string } | null>(null)
 const msgStats = ref<{
   total: number; success: number; errors: number;

@@ -15,29 +15,26 @@ async function proxyRssdi(path: string, token: string | null): Promise<Response>
   })
 }
 
-rssdiRoutes.get('/feeds', async (c) => {
+rssdiRoutes.get('/me', async (c) => {
   const token = c.req.header('X-Rssdi-Token') ?? null
   try {
-    const res = await proxyRssdi('/api/feeds', token)
-    if (!res.ok) return c.json({ error: `RSSDI ${res.status}`, hint: 'Vérifiez votre token RSSDI' }, res.status as any)
-    const data = await res.json() as any
-    const feeds = Array.isArray(data) ? data : (data.feeds ?? data.items ?? [])
-    return c.json(feeds)
+    const res = await proxyRssdi('/api/v1/auth/me', token)
+    if (!res.ok) return c.json({ error: `RSSDI ${res.status}`, hint: 'Token invalide ou expiré' }, res.status as any)
+    return c.json(await res.json())
   } catch (e: any) {
     return c.json({ error: 'RSSDI inaccessible', hint: e.message }, 502)
   }
 })
 
-rssdiRoutes.get('/articles', async (c) => {
+rssdiRoutes.get('/feeds', async (c) => {
   const token = c.req.header('X-Rssdi-Token') ?? null
-  const limit = c.req.query('limit') ?? '20'
   try {
-    const res = await proxyRssdi(`/api/articles?limit=${limit}`, token)
-    if (!res.ok) return c.json({ error: `RSSDI ${res.status}` }, res.status as any)
+    const res = await proxyRssdi('/api/v1/fluxes', token)
+    if (!res.ok) return c.json({ error: `RSSDI ${res.status}`, hint: 'Token invalide ou RSSDI inaccessible' }, res.status as any)
     const data = await res.json() as any
-    const articles = Array.isArray(data) ? data : (data.articles ?? data.items ?? [])
-    return c.json(articles)
-  } catch {
-    return c.json([], 200)
+    const feeds = Array.isArray(data) ? data : (data.feeds ?? data.items ?? [])
+    return c.json(feeds)
+  } catch (e: any) {
+    return c.json({ error: 'RSSDI inaccessible', hint: e.message }, 502)
   }
 })

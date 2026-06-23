@@ -52,6 +52,7 @@ function blockCount(t: any): string {
 }
 
 async function remove(id: number) {
+  if (!confirm('Supprimer ce tutoriel ?')) return
   await api.delete(`/tutorials/${id}`)
   tutorials.value = tutorials.value.filter(t => t.id !== id)
   ui.notify('Tutoriel supprimé')

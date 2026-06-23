@@ -38,7 +38,7 @@ app.route('/api/uploads', uploadRoutes)
 app.route('/api/rssdi', rssdiRoutes)
 mkdirSync(process.env.UPLOAD_DIR ?? '/app/data/uploads', { recursive: true })
 
-app.get('/health', (c) => c.json({ ok: true, version: '2.0.0', app: 'forgehook' }))
+app.get('/health', (c) => c.json({ ok: true, version: '2.1.0', app: 'forgehook' }))
 
 app.onError((err, c) => {
   console.error('[error]', err)

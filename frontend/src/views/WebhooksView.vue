@@ -171,6 +171,7 @@ function useInBuilder(id: number) {
 }
 
 async function remove(w: Webhook) {
+  if (!confirm(`Supprimer le webhook "${w.name}" ?`)) return
   await store.remove(w.id)
   ui.notify(`Webhook "${w.name}" supprimé`)
 }

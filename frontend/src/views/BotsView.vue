@@ -201,6 +201,7 @@ async function submit() {
 }
 
 async function remove(id: number) {
+  if (!confirm('Supprimer ce bot ?')) return
   await api.delete(`/bots/${id}`)
   bots.value = bots.value.filter(b => b.id !== id)
   ui.notify('Bot supprimé')
