@@ -117,6 +117,26 @@ botRoutes.get('/discord-bot/status', async (c) => {
   }
 })
 
+botRoutes.get('/:id/guilds/:guildId/threads', async (c) => {
+  const bot = getBot(Number(c.req.param('id')))
+  if (!bot) return c.json({ error: 'Not found' }, 404)
+  const guildId = c.req.param('guildId')
+  const parentId = c.req.query('parent_id') // filtre par forum channel
+  const res = await fetch(`https://discord.com/api/v10/guilds/${encodeURIComponent(guildId)}/threads/active`, {
+    headers: { Authorization: `Bot ${bot.token}` },
+    signal: AbortSignal.timeout(8_000),
+  })
+  if (!res.ok) return c.json({ error: 'Discord API error', detail: await res.text() }, 422)
+  const data = await res.json() as { threads: any[] }
+  let threads = data.threads ?? []
+  if (parentId) threads = threads.filter((t: any) => t.parent_id === parentId)
+  return c.json(
+    threads
+      .sort((a: any, b: any) => a.name.localeCompare(b.name))
+      .map((t: any) => ({ id: t.id, name: t.name, type: t.type, parent_id: t.parent_id }))
+  )
+})
+
 botRoutes.get('/:id/guilds/:guildId/channels', async (c) => {
   const bot = getBot(Number(c.req.param('id')))
   if (!bot) return c.json({ error: 'Not found' }, 404)

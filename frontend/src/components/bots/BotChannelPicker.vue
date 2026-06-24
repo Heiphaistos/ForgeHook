@@ -7,9 +7,7 @@
         <div v-else-if="guildError" class="error-text">{{ guildError }}</div>
         <select v-else v-model="selectedGuildId" @change="onGuildChange" class="picker-select">
           <option value="">-- Choisir un serveur --</option>
-          <option v-for="g in guilds" :key="g.id" :value="g.id">
-            {{ g.name }}
-          </option>
+          <option v-for="g in guilds" :key="g.id" :value="g.id">{{ g.name }}</option>
         </select>
       </div>
 
@@ -21,22 +19,33 @@
           <option value="">-- Choisir un channel --</option>
           <template v-for="ch in channels" :key="ch.id">
             <optgroup v-if="ch.type === 4" :label="'📁 ' + ch.name"></optgroup>
-            <option v-else :value="ch.id">
-              {{ channelPrefix(ch.type) }} {{ ch.name }}
-            </option>
+            <option v-else :value="ch.id">{{ channelPrefix(ch.type) }} {{ ch.name }}</option>
           </template>
         </select>
       </div>
     </div>
 
-    <div v-if="selectedChannelId" class="selected-info">
-      ✅ <strong>{{ selectedChannelName }}</strong> sur <strong>{{ selectedGuildName }}</strong>
+    <!-- 3ème sélecteur : posts du forum (type 15) -->
+    <div v-if="selectedChannelType === 15" class="picker-row">
+      <div class="picker-group" style="flex:1">
+        <label>Post du forum 🗂️</label>
+        <div v-if="loadingThreads" class="loading-text">Chargement des posts...</div>
+        <select v-else v-model="selectedThreadId" @change="onThreadChange" class="picker-select">
+          <option value="">-- Choisir un post --</option>
+          <option v-for="t in threads" :key="t.id" :value="t.id">💬 {{ t.name }}</option>
+        </select>
+        <div v-if="!threads.length && !loadingThreads" class="hint-text">Aucun post actif dans ce forum</div>
+      </div>
+    </div>
+
+    <div v-if="resolvedChannelId" class="selected-info">
+      ✅ <strong>{{ resolvedChannelName }}</strong> sur <strong>{{ selectedGuildName }}</strong>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import api from '../../api/client'
 
 const props = defineProps<{ botId: number | null }>()
@@ -47,22 +56,42 @@ const emit = defineEmits<{
 
 interface Guild { id: string; name: string; icon: string | null }
 interface Channel { id: string; name: string; type: number; parent_id: string | null }
+interface Thread { id: string; name: string; type: number; parent_id: string }
 
 const guilds = ref<Guild[]>([])
 const channels = ref<Channel[]>([])
+const threads = ref<Thread[]>([])
 const selectedGuildId = ref('')
 const selectedChannelId = ref('')
+const selectedThreadId = ref('')
 const selectedGuildName = ref('')
 const selectedChannelName = ref('')
 const loadingGuilds = ref(false)
 const loadingChannels = ref(false)
+const loadingThreads = ref(false)
 const guildError = ref('')
+
+const selectedChannelType = computed(() =>
+  channels.value.find(c => c.id === selectedChannelId.value)?.type ?? null
+)
+
+// L'ID réel à envoyer : le thread si forum, sinon le channel
+const resolvedChannelId = computed(() =>
+  selectedChannelType.value === 15 ? selectedThreadId.value : selectedChannelId.value
+)
+const resolvedChannelName = computed(() =>
+  selectedChannelType.value === 15
+    ? threads.value.find(t => t.id === selectedThreadId.value)?.name ?? ''
+    : selectedChannelName.value
+)
 
 watch(() => props.botId, async (id) => {
   guilds.value = []
   channels.value = []
+  threads.value = []
   selectedGuildId.value = ''
   selectedChannelId.value = ''
+  selectedThreadId.value = ''
   guildError.value = ''
   if (!id) return
   loadingGuilds.value = true
@@ -78,7 +107,9 @@ watch(() => props.botId, async (id) => {
 
 async function onGuildChange() {
   channels.value = []
+  threads.value = []
   selectedChannelId.value = ''
+  selectedThreadId.value = ''
   emit('select', null)
   if (!selectedGuildId.value || !props.botId) return
   selectedGuildName.value = guilds.value.find(g => g.id === selectedGuildId.value)?.name ?? ''
@@ -91,19 +122,43 @@ async function onGuildChange() {
   }
 }
 
-function onChannelChange() {
-  const ch = channels.value.find(c => c.id === selectedChannelId.value)
-  selectedChannelName.value = ch?.name ?? ''
-  if (selectedChannelId.value) {
+async function onChannelChange() {
+  selectedThreadId.value = ''
+  threads.value = []
+  emit('select', null)
+  if (!selectedChannelId.value) return
+  selectedChannelName.value = channels.value.find(c => c.id === selectedChannelId.value)?.name ?? ''
+
+  if (selectedChannelType.value === 15) {
+    // Forum : charger les posts (threads actifs)
+    loadingThreads.value = true
+    try {
+      const { data } = await api.get(`/bots/${props.botId}/guilds/${selectedGuildId.value}/threads`, {
+        params: { parent_id: selectedChannelId.value },
+      })
+      threads.value = data as Thread[]
+    } finally {
+      loadingThreads.value = false
+    }
+  } else {
+    // Channel normal : émettre directement
     emit('select', {
       guildId: selectedGuildId.value,
       channelId: selectedChannelId.value,
       channelName: selectedChannelName.value,
       guildName: selectedGuildName.value,
     })
-  } else {
-    emit('select', null)
   }
+}
+
+function onThreadChange() {
+  if (!selectedThreadId.value) { emit('select', null); return }
+  emit('select', {
+    guildId: selectedGuildId.value,
+    channelId: selectedThreadId.value,
+    channelName: resolvedChannelName.value,
+    guildName: selectedGuildName.value,
+  })
 }
 
 function channelPrefix(type: number): string {
