@@ -42,7 +42,7 @@ tutorialRoutes.put('/:id', async (c) => {
   const body = tutorialSchema.safeParse(await c.req.json())
   if (!body.success) return c.json({ error: body.error.flatten() }, 400)
   const changes = getDb().prepare(
-    'UPDATE tutorials SET title=?, description=?, blocks=?, published=?, updated_at=datetime("now") WHERE id=?'
+    `UPDATE tutorials SET title=?, description=?, blocks=?, published=?, updated_at=datetime('now') WHERE id=?`
   ).run(body.data.title, body.data.description ?? null, JSON.stringify(body.data.blocks), body.data.published ? 1 : 0, id).changes
   if (!changes) return c.json({ error: 'Not found' }, 404)
   return c.json({ ok: true })
