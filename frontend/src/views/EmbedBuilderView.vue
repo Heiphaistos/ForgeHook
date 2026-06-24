@@ -78,18 +78,38 @@
           </button>
         </div>
 
-        <!-- MODE ÉTAPES : titre + explication + screenshot par étape -->
+        <!-- MODE ÉTAPES : titre + explication + code + screenshot par étape -->
         <template v-if="stepMode">
           <div v-for="(embed, i) in embedStore.message.embeds" :key="i" class="step-card">
             <div class="step-card-header">
               <span class="step-badge">Étape {{ i + 1 }}</span>
-              <button v-if="embedStore.message.embeds.length > 1"
-                @click="embedStore.removeEmbed(i)" class="btn-danger-sm">✕ Supprimer</button>
+              <div style="display:flex;gap:6px">
+                <button @click="toggleStepCode(i)" class="btn-secondary step-code-btn"
+                  :class="{ active: stepShowCode[i] }" title="Ajouter un bloc de code">💻 Code</button>
+                <button v-if="embedStore.message.embeds.length > 1"
+                  @click="embedStore.removeEmbed(i)" class="btn-danger-sm">✕</button>
+              </div>
             </div>
             <div class="step-fields">
               <input v-model="embed.title" placeholder="Titre de l'étape (ex: Installation)" class="fh-input" maxlength="256" />
               <textarea v-model="embed.description" placeholder="Explication détaillée de cette étape..."
                 class="fh-textarea" rows="3" maxlength="4096" />
+
+              <!-- Bloc code inline -->
+              <div v-if="stepShowCode[i]" class="step-code-editor">
+                <div class="step-code-bar">
+                  <select v-model="stepCodeLang[i]" class="fh-select step-lang-select">
+                    <option value="">Aucun (texte brut)</option>
+                    <option v-for="l in codeLangs" :key="l" :value="l">{{ l }}</option>
+                  </select>
+                  <button @click="insertStepCode(i)" class="btn-primary" style="font-size:12px;padding:4px 10px">
+                    ↩ Insérer dans l'explication
+                  </button>
+                </div>
+                <textarea v-model="stepCodeContent[i]" placeholder="Collez votre code ici..."
+                  class="fh-textarea step-code-textarea" rows="5" spellcheck="false" />
+              </div>
+
               <div class="step-img-row">
                 <input v-model="embed.image!.url" placeholder="URL du screenshot (ou cliquer 📤 pour importer)" class="fh-input" />
                 <input :ref="(el) => { if (el) stepImgInputs[i] = el as HTMLInputElement }"
@@ -274,6 +294,11 @@ const sent = ref(false)
 const showJson = ref(false)
 const stepMode = ref(false)
 const stepImgInputs = ref<HTMLInputElement[]>([])
+const stepShowCode = ref<boolean[]>([])
+const stepCodeLang = ref<string[]>([])
+const stepCodeContent = ref<string[]>([])
+
+const codeLangs = ['bash', 'python', 'javascript', 'typescript', 'json', 'html', 'css', 'sql', 'yaml', 'dockerfile', 'rust', 'go', 'java', 'php', 'csharp', 'cpp', 'xml']
 const showTemplates = ref(false)
 const showSaveTemplate = ref(false)
 const showFonts = ref(false)
@@ -353,9 +378,25 @@ function applyFontToField(text: string, field: string) {
 
 function addStep() {
   embedStore.addEmbed()
-  // S'assurer que l'image est bien initialisée sur le nouvel embed
   const last = embedStore.message.embeds[embedStore.message.embeds.length - 1]
   if (!last.image) last.image = { url: '' }
+}
+
+function toggleStepCode(i: number) {
+  stepShowCode.value[i] = !stepShowCode.value[i]
+  if (!stepCodeLang.value[i]) stepCodeLang.value[i] = 'bash'
+  if (!stepCodeContent.value[i]) stepCodeContent.value[i] = ''
+}
+
+function insertStepCode(i: number) {
+  const lang = stepCodeLang.value[i] ?? ''
+  const code = stepCodeContent.value[i] ?? ''
+  if (!code.trim()) return
+  const block = `\`\`\`${lang}\n${code}\n\`\`\``
+  const embed = embedStore.message.embeds[i]
+  embed.description = embed.description ? embed.description + '\n' + block : block
+  stepCodeContent.value[i] = ''
+  stepShowCode.value[i] = false
 }
 
 async function uploadStepImage(index: number, e: Event) {
@@ -448,6 +489,13 @@ async function uploadAvatar(e: Event) {
 .step-img-row { display: flex; gap: 6px; align-items: center; }
 .step-img-row .fh-input { flex: 1; }
 .step-preview-img { max-width: 100%; max-height: 160px; border-radius: 6px; object-fit: cover; border: 1px solid var(--border); margin-top: 4px; }
+/* Code editor in step mode */
+.step-code-btn { font-size: 12px; padding: 3px 10px; }
+.step-code-btn.active { background: #2d2f33; border-color: #5865f2; color: #5865f2; }
+.step-code-editor { background: #1a1c1f; border: 1px solid #40444b; border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.step-code-bar { display: flex; gap: 8px; align-items: center; }
+.step-lang-select { font-size: 12px; padding: 4px 8px; flex: 1; }
+.step-code-textarea { font-family: monospace; font-size: 13px; resize: vertical; background: #111214; }
 .field-hint { font-size: 10px; color: var(--text-muted); font-weight: 400; margin-left: 6px; }
 .avatar-row { display: flex; gap: 6px; align-items: center; }
 .avatar-upload-btn { padding: 6px 10px; flex-shrink: 0; }

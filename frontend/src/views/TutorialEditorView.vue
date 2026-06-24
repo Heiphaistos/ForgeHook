@@ -418,51 +418,47 @@ function onBotChannelSelect(sel: { channelId: string } | null) {
 
 function tutorialToDiscordParts(blocks: TutorialBlock[], title: string): any[] {
   const calloutEmoji: Record<string, string> = { warning: '⚠️', success: '✅', danger: '❌', info: 'ℹ️' }
-  const parts: any[] = []
-  let buf = `**${title}**\n`
-
-  function flushBuf() {
-    const text = buf.trim()
-    if (!text) { buf = ''; return }
-    // Split at 2000 chars on newline boundaries
-    let remaining = text
-    while (remaining.length > 0) {
-      if (remaining.length <= 2000) {
-        parts.push({ content: remaining })
-        remaining = ''
-      } else {
-        let cut = remaining.lastIndexOf('\n', 2000)
-        if (cut <= 0) cut = 2000
-        parts.push({ content: remaining.slice(0, cut) })
-        remaining = remaining.slice(cut).trimStart()
-      }
-    }
-    buf = ''
-  }
+  const embeds: any[] = []
+  let textBuf = ''
 
   for (const b of blocks) {
     if (b.type === 'text') {
-      buf += (buf && !buf.endsWith('\n') ? '\n' : '') + b.content + '\n'
+      textBuf += (textBuf ? '\n' : '') + b.content
     } else if (b.type === 'code') {
       const lang = b.content?.language ?? ''
-      buf += `\`\`\`${lang}\n${b.content?.code ?? ''}\n\`\`\`\n`
+      textBuf += (textBuf ? '\n' : '') + `\`\`\`${lang}\n${b.content?.code ?? ''}\n\`\`\``
     } else if (b.type === 'callout') {
       const emoji = calloutEmoji[b.content?.type ?? 'info'] ?? 'ℹ️'
-      buf += `> ${emoji} ${(b.content?.text ?? '').replace(/\n/g, '\n> ')}\n`
+      textBuf += (textBuf ? '\n' : '') + `> ${emoji} ${(b.content?.text ?? '').replace(/\n/g, '\n> ')}`
     } else if (b.type === 'separator') {
-      buf += '──────────\n'
+      textBuf += (textBuf ? '\n' : '') + '──────────'
     } else if (b.type === 'video') {
-      buf += (b.content?.url ?? '') + '\n'
+      textBuf += (textBuf ? '\n' : '') + (b.content?.url ?? '')
     } else if (b.type === 'image') {
-      flushBuf()
-      if (b.content?.url) parts.push({ embeds: [{ image: { url: b.content.url } }] })
+      // Texte accumulé + image → un seul embed
+      const embed: any = {}
+      if (textBuf.trim()) embed.description = textBuf.trim().slice(0, 4096)
+      if (b.content?.url) embed.image = { url: b.content.url }
+      if (embed.description || embed.image) embeds.push(embed)
+      textBuf = ''
     } else if (b.type === 'embed') {
-      flushBuf()
-      parts.push({ embeds: [b.content] })
+      if (textBuf.trim()) { embeds.push({ description: textBuf.trim().slice(0, 4096) }); textBuf = '' }
+      embeds.push(b.content)
     }
   }
-  flushBuf()
-  return parts.filter(p => (p.content && p.content.trim()) || p.embeds?.length)
+  // Flush texte restant sans image suivante
+  if (textBuf.trim()) embeds.push({ description: textBuf.trim().slice(0, 4096) })
+
+  if (!embeds.length) return []
+
+  // Regrouper en messages de max 10 embeds (limite Discord)
+  const messages: any[] = []
+  for (let i = 0; i < embeds.length; i += 10) {
+    const msg: any = { embeds: embeds.slice(i, i + 10) }
+    if (i === 0) msg.content = `**${title}**`
+    messages.push(msg)
+  }
+  return messages
 }
 
 const sendParts = computed(() =>
@@ -470,10 +466,12 @@ const sendParts = computed(() =>
 )
 
 function partPreview(p: any): string {
-  if (p.content) return p.content.slice(0, 80).replace(/\n/g, ' ') + (p.content.length > 80 ? '…' : '')
-  if (p.embeds?.[0]?.image?.url) return p.embeds[0].image.url.slice(0, 60)
-  if (p.embeds?.[0]?.title) return p.embeds[0].title
-  return '(embed)'
+  const ec = p.embeds?.length ?? 0
+  if (ec > 0) {
+    const imgs = p.embeds.filter((e: any) => e.image?.url).length
+    return `${ec} embed${ec > 1 ? 's' : ''} — ${imgs} image${imgs !== 1 ? 's' : ''}`
+  }
+  return p.content?.slice(0, 80).replace(/\n/g, ' ') ?? '(vide)'
 }
 
 async function openSendModal() {
@@ -496,29 +494,53 @@ async function doSend() {
   sendError.value = ''
   sendProgress.value = 0
   try {
-    for (const part of sendParts.value) {
-      if (sendMode.value === 'webhook') {
-        if (!sendWebhookId.value) return
-        await api.post('/discord/send', {
-          webhook_id: sendWebhookId.value,
-          payload: part,
-          thread_id: sendThreadId.value || undefined,
-        })
-      } else {
-        if (!sendBotId.value || !sendBotChannelId.value) return
-        await api.post('/bots/send', {
-          bot_id: sendBotId.value,
-          channel_id: sendBotChannelId.value,
-          payload: part,
-        })
+    for (let pi = 0; pi < sendParts.value.length; pi++) {
+      const part = sendParts.value[pi]
+      let attempts = 3
+      while (attempts > 0) {
+        try {
+          if (sendMode.value === 'webhook') {
+            if (!sendWebhookId.value) return
+            await api.post('/discord/send', {
+              webhook_id: sendWebhookId.value,
+              payload: part,
+              thread_id: sendThreadId.value || undefined,
+            })
+          } else {
+            if (!sendBotId.value || !sendBotChannelId.value) return
+            await api.post('/bots/send', {
+              bot_id: sendBotId.value,
+              channel_id: sendBotChannelId.value,
+              payload: part,
+            })
+          }
+          sendProgress.value++
+          break
+        } catch (e: any) {
+          // Extraire retry_after depuis la réponse Discord (encapsulée en string)
+          let retryAfter: number | null = null
+          const errStr = e?.response?.data?.error
+          if (typeof errStr === 'string') {
+            try { retryAfter = JSON.parse(errStr)?.retry_after ?? null } catch {}
+          }
+          if (retryAfter && attempts > 1) {
+            await new Promise(r => setTimeout(r, Math.ceil(retryAfter! * 1000) + 300))
+            attempts--
+          } else {
+            let msg = errStr ?? 'Erreur lors de l\'envoi'
+            try { msg = JSON.parse(msg)?.message ?? msg } catch {}
+            throw new Error(msg)
+          }
+        }
       }
-      sendProgress.value++
+      // Délai de sécurité entre messages multiples
+      if (pi < sendParts.value.length - 1) await new Promise(r => setTimeout(r, 600))
     }
     showSendModal.value = false
     saveMsg.value = '✅ Tutoriel envoyé sur Discord !'
     setTimeout(() => { saveMsg.value = '' }, 3000)
   } catch (e: any) {
-    sendError.value = e?.response?.data?.error ?? 'Erreur lors de l\'envoi'
+    sendError.value = e?.message ?? 'Erreur lors de l\'envoi'
   } finally {
     sending.value = false
   }
