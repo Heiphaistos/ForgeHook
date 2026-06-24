@@ -5,6 +5,8 @@
       <input v-model="tutorial.title" placeholder="Titre du tutoriel..." class="fh-input title-input" />
       <div class="topbar-actions">
         <button @click="showTplModal = true" class="btn-secondary" title="Templates pré-faits">📋 Templates</button>
+        <button @click="openSendModal" class="btn-secondary" title="Envoyer sur Discord">🚀 Envoyer</button>
+        <button @click="openTplConvert" class="btn-secondary" title="Convertir en template embed">📤 En template</button>
         <button @click="previewMode = !previewMode" class="btn-secondary">
           {{ previewMode ? '✏️ Éditer' : '👁 Aperçu' }}
         </button>
@@ -142,6 +144,83 @@
 
     <p v-if="saveMsg" class="save-toast">{{ saveMsg }}</p>
 
+    <!-- Modal : Envoyer sur Discord -->
+    <div v-if="showSendModal" class="modal-overlay" @click.self="showSendModal = false">
+      <div class="modal send-modal">
+        <h3>🚀 Envoyer sur Discord</h3>
+        <div class="section">
+          <label class="fh-label">Webhook *</label>
+          <select v-model="sendWebhookId" class="fh-select">
+            <option :value="null" disabled>— Choisir un webhook —</option>
+            <option v-for="w in sendWebhooks" :key="w.id" :value="w.id">{{ w.name }} ({{ w.category }})</option>
+          </select>
+        </div>
+        <div class="section">
+          <label class="fh-label">Thread ID <span style="color:var(--text-muted);font-weight:400">(optionnel)</span></label>
+          <input v-model="sendThreadId" placeholder="ID du thread Discord" class="fh-input" />
+        </div>
+
+        <div v-if="sendParts.length" class="section">
+          <div class="send-preview-header">Aperçu — <strong>{{ sendParts.length }}</strong> message{{ sendParts.length > 1 ? 's' : '' }} à envoyer</div>
+          <div class="send-parts-list">
+            <div v-for="(p, i) in sendParts" :key="i" class="send-part">
+              <span class="send-part-num">Message {{ i + 1 }}</span>
+              <span class="send-part-type">{{ p.embeds?.length ? '📦 embed' : '💬 texte' }}</span>
+              <span class="send-part-preview">{{ partPreview(p) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="sendProgress > 0 && sending" class="progress-bar-wrap">
+          <div class="progress-bar" :style="{ width: (sendProgress / sendParts.length * 100) + '%' }"></div>
+          <span class="progress-label">{{ sendProgress }} / {{ sendParts.length }}</span>
+        </div>
+        <p v-if="sendError" class="error">{{ sendError }}</p>
+
+        <div class="modal-actions">
+          <button @click="doSend" class="btn-primary" :disabled="!sendWebhookId || sending || !sendParts.length">
+            {{ sending ? `⏳ Envoi ${sendProgress}/${sendParts.length}…` : `🚀 Envoyer (${sendParts.length} msg)` }}
+          </button>
+          <button @click="showSendModal = false" class="btn-secondary">Annuler</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal : Convertir en template embed -->
+    <div v-if="showTplConvertModal" class="modal-overlay" @click.self="showTplConvertModal = false">
+      <div class="modal tpl-convert-modal">
+        <h3>📤 Convertir en template embed</h3>
+        <div class="section">
+          <label class="fh-label">Nom du template *</label>
+          <input v-model="tplConvertName" class="fh-input" />
+        </div>
+        <div class="section">
+          <label class="fh-label">Catégorie</label>
+          <input v-model="tplConvertCategory" placeholder="tutoriaux" class="fh-input" />
+        </div>
+        <div class="section">
+          <label class="fh-label">Couleur (hex)</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input v-model="tplConvertColor" placeholder="#5865F2" class="fh-input" style="max-width:130px" />
+            <span class="color-dot" :style="{ background: tplConvertColor }"></span>
+          </div>
+        </div>
+        <div v-if="tplConvertEmbed" class="section">
+          <label class="fh-label">Aperçu Discord</label>
+          <div class="tpl-convert-preview">
+            <EmbedPreview :embed="tplConvertEmbed" />
+          </div>
+        </div>
+        <p v-if="tplConvertError" class="error">{{ tplConvertError }}</p>
+        <div class="modal-actions">
+          <button @click="doTplConvert" class="btn-primary" :disabled="tplConvertSaving">
+            {{ tplConvertSaving ? '⏳ Sauvegarde…' : '💾 Sauver comme template' }}
+          </button>
+          <button @click="showTplConvertModal = false" class="btn-secondary">Annuler</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Modal templates pré-faits -->
     <div v-if="showTplModal" class="modal-overlay" @click.self="showTplModal = false">
       <div class="modal tpl-modal">
@@ -163,13 +242,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, computed, onMounted } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import EmbedBuilder from '../components/embed/EmbedBuilder.vue'
 import EmbedPreview from '../components/preview/EmbedPreview.vue'
 import api from '../api/client'
 import { emptyEmbed } from '../types/discord'
 import type { Tutorial, TutorialBlock } from '../types/app'
+import type { Webhook } from '../types/app'
 
 const route = useRoute()
 const router = useRouter()
@@ -292,6 +372,201 @@ function mk(type: string, content: any): TutorialBlock {
   return { id: crypto.randomUUID(), type: type as TutorialBlock['type'], content }
 }
 
+// ─── Envoyer sur Discord ──────────────────────────────────────────
+const showSendModal = ref(false)
+const sendWebhookId = ref<number | null>(null)
+const sendWebhooks = ref<Webhook[]>([])
+const sendThreadId = ref('')
+const sendError = ref('')
+const sending = ref(false)
+const sendProgress = ref(0)
+
+function tutorialToDiscordParts(blocks: TutorialBlock[], title: string): any[] {
+  const calloutEmoji: Record<string, string> = { warning: '⚠️', success: '✅', danger: '❌', info: 'ℹ️' }
+  const parts: any[] = []
+  let buf = `**${title}**\n`
+
+  function flushBuf() {
+    const text = buf.trim()
+    if (!text) { buf = ''; return }
+    // Split at 2000 chars on newline boundaries
+    let remaining = text
+    while (remaining.length > 0) {
+      if (remaining.length <= 2000) {
+        parts.push({ content: remaining })
+        remaining = ''
+      } else {
+        let cut = remaining.lastIndexOf('\n', 2000)
+        if (cut <= 0) cut = 2000
+        parts.push({ content: remaining.slice(0, cut) })
+        remaining = remaining.slice(cut).trimStart()
+      }
+    }
+    buf = ''
+  }
+
+  for (const b of blocks) {
+    if (b.type === 'text') {
+      buf += (buf && !buf.endsWith('\n') ? '\n' : '') + b.content + '\n'
+    } else if (b.type === 'code') {
+      const lang = b.content?.language ?? ''
+      buf += `\`\`\`${lang}\n${b.content?.code ?? ''}\n\`\`\`\n`
+    } else if (b.type === 'callout') {
+      const emoji = calloutEmoji[b.content?.type ?? 'info'] ?? 'ℹ️'
+      buf += `> ${emoji} ${(b.content?.text ?? '').replace(/\n/g, '\n> ')}\n`
+    } else if (b.type === 'separator') {
+      buf += '──────────\n'
+    } else if (b.type === 'video') {
+      buf += (b.content?.url ?? '') + '\n'
+    } else if (b.type === 'image') {
+      flushBuf()
+      if (b.content?.url) parts.push({ embeds: [{ image: { url: b.content.url } }] })
+    } else if (b.type === 'embed') {
+      flushBuf()
+      parts.push({ embeds: [b.content] })
+    }
+  }
+  flushBuf()
+  return parts.filter(p => (p.content && p.content.trim()) || p.embeds?.length)
+}
+
+const sendParts = computed(() =>
+  tutorial.value.blocks.length ? tutorialToDiscordParts(tutorial.value.blocks, tutorial.value.title || 'Tutoriel') : []
+)
+
+function partPreview(p: any): string {
+  if (p.content) return p.content.slice(0, 80).replace(/\n/g, ' ') + (p.content.length > 80 ? '…' : '')
+  if (p.embeds?.[0]?.image?.url) return p.embeds[0].image.url.slice(0, 60)
+  if (p.embeds?.[0]?.title) return p.embeds[0].title
+  return '(embed)'
+}
+
+async function openSendModal() {
+  sendError.value = ''
+  sendProgress.value = 0
+  sendThreadId.value = ''
+  if (!sendWebhooks.value.length) {
+    const { data } = await api.get('/webhooks')
+    sendWebhooks.value = data
+  }
+  showSendModal.value = true
+}
+
+async function doSend() {
+  if (!sendWebhookId.value || !sendParts.value.length) return
+  sending.value = true
+  sendError.value = ''
+  sendProgress.value = 0
+  try {
+    for (const part of sendParts.value) {
+      await api.post('/discord/send', {
+        webhook_id: sendWebhookId.value,
+        payload: part,
+        thread_id: sendThreadId.value || undefined,
+      })
+      sendProgress.value++
+    }
+    showSendModal.value = false
+    saveMsg.value = '✅ Tutoriel envoyé sur Discord !'
+    setTimeout(() => { saveMsg.value = '' }, 3000)
+  } catch (e: any) {
+    sendError.value = e?.response?.data?.error ?? 'Erreur lors de l\'envoi'
+  } finally {
+    sending.value = false
+  }
+}
+
+// ─── Convertir en template embed ─────────────────────────────────
+const showTplConvertModal = ref(false)
+const tplConvertName = ref('')
+const tplConvertCategory = ref('tutoriaux')
+const tplConvertColor = ref('#5865F2')
+const tplConvertError = ref('')
+const tplConvertSaving = ref(false)
+
+function tutorialToEmbed(tut: Tutorial) {
+  const colorHex = tplConvertColor.value.replace('#', '')
+  const color = parseInt(colorHex, 16) || 0x5865f2
+  const fields: { name: string; value: string; inline: boolean }[] = []
+  let description = ''
+  let imageUrl = ''
+  let thumbnailUrl = ''
+  let sectionIdx = 0
+
+  for (const b of tut.blocks) {
+    if (b.type === 'text') {
+      if (!description) {
+        description = (b.content as string).slice(0, 4096)
+      } else {
+        sectionIdx++
+        const val = (b.content as string).slice(0, 1024)
+        if (fields.length < 25) fields.push({ name: `Section ${sectionIdx}`, value: val, inline: false })
+      }
+    } else if (b.type === 'image' && b.content?.url) {
+      if (!imageUrl) imageUrl = b.content.url
+      else if (!thumbnailUrl) thumbnailUrl = b.content.url
+    } else if (b.type === 'code') {
+      const lang = b.content?.language ?? ''
+      const code = (b.content?.code ?? '').slice(0, 990)
+      if (fields.length < 25) fields.push({ name: `💻 Code${lang ? ` (${lang})` : ''}`, value: `\`\`\`${lang}\n${code}\n\`\`\``, inline: false })
+    } else if (b.type === 'callout') {
+      const emoji: Record<string, string> = { warning: '⚠️', success: '✅', danger: '❌', info: 'ℹ️' }
+      const e = emoji[b.content?.type ?? 'info'] ?? 'ℹ️'
+      const val = `${e} ${(b.content?.text ?? '').slice(0, 1020)}`
+      if (fields.length < 25) fields.push({ name: 'Note', value: val, inline: false })
+    }
+  }
+
+  return {
+    title: tut.title.slice(0, 256),
+    description,
+    color,
+    fields,
+    image: imageUrl ? { url: imageUrl } : { url: '' },
+    thumbnail: thumbnailUrl ? { url: thumbnailUrl } : { url: '' },
+    author: { name: '', url: '', icon_url: '' },
+    footer: { text: '', icon_url: '' },
+    url: '',
+    timestamp: '',
+  }
+}
+
+const tplConvertEmbed = computed(() =>
+  showTplConvertModal.value ? tutorialToEmbed(tutorial.value) : null
+)
+
+function openTplConvert() {
+  tplConvertName.value = tutorial.value.title || 'Mon template'
+  tplConvertCategory.value = 'tutoriaux'
+  tplConvertColor.value = '#5865F2'
+  tplConvertError.value = ''
+  showTplConvertModal.value = true
+}
+
+async function doTplConvert() {
+  if (!tplConvertName.value.trim()) { tplConvertError.value = 'Nom requis'; return }
+  tplConvertSaving.value = true
+  tplConvertError.value = ''
+  try {
+    const embed = tutorialToEmbed(tutorial.value)
+    await api.post('/templates', {
+      name: tplConvertName.value.trim(),
+      description: tutorial.value.description ?? '',
+      category: tplConvertCategory.value.trim() || 'tutoriaux',
+      preview_color: tplConvertColor.value.match(/^#[0-9a-fA-F]{6}$/) ? tplConvertColor.value : '#5865F2',
+      payload: { content: '', embeds: [embed] },
+    })
+    showTplConvertModal.value = false
+    saveMsg.value = '✅ Template embed créé !'
+    setTimeout(() => { saveMsg.value = '' }, 3000)
+  } catch (e: any) {
+    tplConvertError.value = e?.response?.data?.error ?? 'Erreur lors de la sauvegarde'
+  } finally {
+    tplConvertSaving.value = false
+  }
+}
+
+// ─── Templates pré-faits ─────────────────────────────────────────
 function applyTemplate(tpl: typeof tutorialTemplates[0]) {
   if (tutorial.value.blocks.length > 0 && !confirm('Remplacer les blocs existants par ce template ?')) return
   tutorial.value.title = tutorial.value.title || tpl.name
@@ -470,6 +745,24 @@ function youtubeEmbed(url: string): string {
 .callout-warning { background: rgba(254,231,92,.1); border-color: #fee75c; }
 .callout-success { background: rgba(87,242,135,.1); border-color: #57f287; }
 .callout-danger { background: rgba(237,66,69,.15); border-color: #ed4245; }
+
+/* Send modal */
+.send-modal { max-width: 580px; }
+.send-preview-header { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
+.send-parts-list { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--bg-tertiary); max-height: 220px; overflow-y: auto; }
+.send-part { display: flex; gap: 10px; align-items: baseline; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.send-part:last-child { border-bottom: none; }
+.send-part-num { color: var(--text-muted); white-space: nowrap; min-width: 70px; }
+.send-part-type { color: var(--accent); white-space: nowrap; font-weight: 700; min-width: 80px; }
+.send-part-preview { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.progress-bar-wrap { position: relative; height: 8px; background: var(--bg-tertiary); border-radius: 4px; margin: 10px 0; overflow: hidden; }
+.progress-bar { height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.3s; }
+.progress-label { position: absolute; right: 0; top: -18px; font-size: 11px; color: var(--text-muted); }
+
+/* Template convert modal */
+.tpl-convert-modal { max-width: 620px; }
+.tpl-convert-preview { background: #36393f; border-radius: 8px; padding: 12px; margin-top: 6px; }
+.color-dot { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--border); flex-shrink: 0; }
 
 /* Template modal */
 .tpl-modal { max-width: 700px; }
