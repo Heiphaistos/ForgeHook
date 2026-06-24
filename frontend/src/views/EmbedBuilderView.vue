@@ -313,12 +313,15 @@
       <div class="modal">
         <h3>💾 Sauver comme template</h3>
         <div class="section">
-          <label class="fh-label">Nom</label>
-          <input v-model="tplForm.name" placeholder="Nom du template" class="fh-input" />
+          <label class="fh-label">Nom <span style="color:#ed4245">*</span></label>
+          <input v-model="tplForm.name" placeholder="Nom du template" class="fh-input"
+            :style="tplNameError ? 'border-color:#ed4245' : ''"
+            @input="tplNameError = false" />
+          <p v-if="tplNameError" style="color:#ed4245;font-size:12px;margin-top:4px">⚠️ Le nom est obligatoire</p>
         </div>
         <div class="section">
           <label class="fh-label">Description</label>
-          <input v-model="tplForm.description" placeholder="Description courte" class="fh-input" />
+          <input v-model="tplForm.description" placeholder="Description courte (optionnel)" class="fh-input" />
         </div>
         <div class="section">
           <label class="fh-label">Catégorie</label>
@@ -329,7 +332,7 @@
           </datalist>
         </div>
         <div class="modal-actions">
-          <button @click="submitTemplate" class="btn-primary">Sauver</button>
+          <button @click="submitTemplate" class="btn-primary">💾 Sauver</button>
           <button @click="showSaveTemplate = false" class="btn-secondary">Annuler</button>
         </div>
       </div>
@@ -387,6 +390,7 @@ const showExport = ref(false)
 const sendMode = ref<'webhook' | 'bot'>('webhook')
 const templates = ref<Template[]>([])
 const tplForm = ref({ name: '', description: '', category: 'Annonces' })
+const tplNameError = ref(false)
 const avatarInput = ref<HTMLInputElement | null>(null)
 
 // Bot send
@@ -516,11 +520,12 @@ function loadPreset(payload: object) {
 
 function saveAsTemplate() {
   tplForm.value = { name: '', description: '', category: 'Annonces' }
+  tplNameError.value = false
   showSaveTemplate.value = true
 }
 
 async function submitTemplate() {
-  if (!tplForm.value.name) return
+  if (!tplForm.value.name) { tplNameError.value = true; return }
   await api.post('/templates', {
     name: tplForm.value.name,
     description: tplForm.value.description,
