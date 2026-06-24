@@ -148,18 +148,44 @@
     <div v-if="showSendModal" class="modal-overlay" @click.self="showSendModal = false">
       <div class="modal send-modal">
         <h3>🚀 Envoyer sur Discord</h3>
-        <div class="section">
-          <label class="fh-label">Webhook *</label>
-          <select v-model="sendWebhookId" class="fh-select">
-            <option :value="null" disabled>— Choisir un webhook —</option>
-            <option v-for="w in sendWebhooks" :key="w.id" :value="w.id">{{ w.name }} ({{ w.category }})</option>
-          </select>
-        </div>
-        <div class="section">
-          <label class="fh-label">Thread ID <span style="color:var(--text-muted);font-weight:400">(optionnel)</span></label>
-          <input v-model="sendThreadId" placeholder="ID du thread Discord" class="fh-input" />
+
+        <!-- Onglets Webhook / Bot -->
+        <div class="send-tabs">
+          <button :class="['send-tab', { active: sendMode === 'webhook' }]" @click="sendMode = 'webhook'">🔗 Webhook</button>
+          <button :class="['send-tab', { active: sendMode === 'bot' }]" @click="sendMode = 'bot'">🤖 Bot</button>
         </div>
 
+        <!-- Mode Webhook -->
+        <template v-if="sendMode === 'webhook'">
+          <div class="section">
+            <label class="fh-label">Webhook *</label>
+            <select v-model="sendWebhookId" class="fh-select">
+              <option :value="null" disabled>— Choisir un webhook —</option>
+              <option v-for="w in sendWebhooks" :key="w.id" :value="w.id">{{ w.name }} ({{ w.category }})</option>
+            </select>
+          </div>
+          <div class="section">
+            <label class="fh-label">Thread ID <span style="color:var(--text-muted);font-weight:400">(optionnel)</span></label>
+            <input v-model="sendThreadId" placeholder="ID du thread Discord" class="fh-input" />
+          </div>
+        </template>
+
+        <!-- Mode Bot -->
+        <template v-else>
+          <div class="section">
+            <label class="fh-label">Bot *</label>
+            <select v-model="sendBotId" class="fh-select">
+              <option :value="null" disabled>— Choisir un bot —</option>
+              <option v-for="b in sendBots" :key="b.id" :value="b.id">{{ b.name }}</option>
+            </select>
+          </div>
+          <div class="section">
+            <label class="fh-label">Serveur &amp; Channel *</label>
+            <BotChannelPicker :bot-id="sendBotId" @select="onBotChannelSelect" />
+          </div>
+        </template>
+
+        <!-- Aperçu commun -->
         <div v-if="sendParts.length" class="section">
           <div class="send-preview-header">Aperçu — <strong>{{ sendParts.length }}</strong> message{{ sendParts.length > 1 ? 's' : '' }} à envoyer</div>
           <div class="send-parts-list">
@@ -178,7 +204,8 @@
         <p v-if="sendError" class="error">{{ sendError }}</p>
 
         <div class="modal-actions">
-          <button @click="doSend" class="btn-primary" :disabled="!sendWebhookId || sending || !sendParts.length">
+          <button @click="doSend" class="btn-primary"
+            :disabled="(sendMode === 'webhook' ? !sendWebhookId : !sendBotChannelId) || sending || !sendParts.length">
             {{ sending ? `⏳ Envoi ${sendProgress}/${sendParts.length}…` : `🚀 Envoyer (${sendParts.length} msg)` }}
           </button>
           <button @click="showSendModal = false" class="btn-secondary">Annuler</button>
@@ -246,10 +273,10 @@ import { ref, watch, computed, onMounted } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import EmbedBuilder from '../components/embed/EmbedBuilder.vue'
 import EmbedPreview from '../components/preview/EmbedPreview.vue'
+import BotChannelPicker from '../components/bots/BotChannelPicker.vue'
 import api from '../api/client'
 import { emptyEmbed } from '../types/discord'
-import type { Tutorial, TutorialBlock } from '../types/app'
-import type { Webhook } from '../types/app'
+import type { Tutorial, TutorialBlock, Webhook } from '../types/app'
 
 const route = useRoute()
 const router = useRouter()
@@ -374,12 +401,20 @@ function mk(type: string, content: any): TutorialBlock {
 
 // ─── Envoyer sur Discord ──────────────────────────────────────────
 const showSendModal = ref(false)
+const sendMode = ref<'webhook' | 'bot'>('webhook')
 const sendWebhookId = ref<number | null>(null)
 const sendWebhooks = ref<Webhook[]>([])
 const sendThreadId = ref('')
+const sendBotId = ref<number | null>(null)
+const sendBots = ref<{ id: number; name: string }[]>([])
+const sendBotChannelId = ref('')
 const sendError = ref('')
 const sending = ref(false)
 const sendProgress = ref(0)
+
+function onBotChannelSelect(sel: { channelId: string } | null) {
+  sendBotChannelId.value = sel?.channelId ?? ''
+}
 
 function tutorialToDiscordParts(blocks: TutorialBlock[], title: string): any[] {
   const calloutEmoji: Record<string, string> = { warning: '⚠️', success: '✅', danger: '❌', info: 'ℹ️' }
@@ -445,25 +480,38 @@ async function openSendModal() {
   sendError.value = ''
   sendProgress.value = 0
   sendThreadId.value = ''
-  if (!sendWebhooks.value.length) {
-    const { data } = await api.get('/webhooks')
-    sendWebhooks.value = data
-  }
+  sendBotChannelId.value = ''
+  const [wh, bots] = await Promise.all([
+    sendWebhooks.value.length ? null : api.get('/webhooks'),
+    sendBots.value.length ? null : api.get('/bots'),
+  ])
+  if (wh) sendWebhooks.value = wh.data
+  if (bots) sendBots.value = bots.data
   showSendModal.value = true
 }
 
 async function doSend() {
-  if (!sendWebhookId.value || !sendParts.value.length) return
+  if (!sendParts.value.length) return
   sending.value = true
   sendError.value = ''
   sendProgress.value = 0
   try {
     for (const part of sendParts.value) {
-      await api.post('/discord/send', {
-        webhook_id: sendWebhookId.value,
-        payload: part,
-        thread_id: sendThreadId.value || undefined,
-      })
+      if (sendMode.value === 'webhook') {
+        if (!sendWebhookId.value) return
+        await api.post('/discord/send', {
+          webhook_id: sendWebhookId.value,
+          payload: part,
+          thread_id: sendThreadId.value || undefined,
+        })
+      } else {
+        if (!sendBotId.value || !sendBotChannelId.value) return
+        await api.post('/bots/send', {
+          bot_id: sendBotId.value,
+          channel_id: sendBotChannelId.value,
+          payload: part,
+        })
+      }
       sendProgress.value++
     }
     showSendModal.value = false
@@ -747,7 +795,11 @@ function youtubeEmbed(url: string): string {
 .callout-danger { background: rgba(237,66,69,.15); border-color: #ed4245; }
 
 /* Send modal */
-.send-modal { max-width: 580px; }
+.send-modal { max-width: 600px; }
+.send-tabs { display: flex; gap: 4px; margin-bottom: 16px; background: var(--bg-tertiary); border-radius: 8px; padding: 4px; }
+.send-tab { flex: 1; padding: 7px; border: none; border-radius: 6px; background: transparent; color: var(--text-muted); font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s; }
+.send-tab.active { background: var(--accent); color: #fff; }
+.send-tab:hover:not(.active) { color: #fff; }
 .send-preview-header { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
 .send-parts-list { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--bg-tertiary); max-height: 220px; overflow-y: auto; }
 .send-part { display: flex; gap: 10px; align-items: baseline; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12px; }
