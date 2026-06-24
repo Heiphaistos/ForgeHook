@@ -163,8 +163,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { ref, watch, onMounted } from 'vue'
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import EmbedBuilder from '../components/embed/EmbedBuilder.vue'
 import EmbedPreview from '../components/preview/EmbedPreview.vue'
 import api from '../api/client'
@@ -182,6 +182,18 @@ let uploadTargetIdx = -1
 const showTplModal = ref(false)
 
 const tutorial = ref<Tutorial>({ id: 0, title: '', description: '', blocks: [], published: 0 })
+
+let loaded = false
+const isDirty = ref(false)
+watch(tutorial, () => { if (loaded) isDirty.value = true }, { deep: true })
+
+onBeforeRouteLeave((_to, _from, next) => {
+  if (isDirty.value && !confirm('Modifications non sauvegardées. Quitter quand même ?')) {
+    next(false)
+  } else {
+    next()
+  }
+})
 
 const blockTypes = [
   { type: 'text', icon: '📝', label: 'Texte' },
@@ -293,6 +305,7 @@ onMounted(async () => {
     const { data } = await api.get(`/tutorials/${id}`)
     tutorial.value = data
   }
+  loaded = true
 })
 
 function defaultContent(type: string): any {
@@ -367,6 +380,7 @@ async function save() {
       router.replace(`/tutorials/${data.id}`)
     }
     saveMsg.value = '✅ Tutoriel sauvegardé !'
+    isDirty.value = false
     setTimeout(() => { saveMsg.value = '' }, 3000)
   } catch (e: any) {
     saveMsg.value = `⚠️ Erreur : ${e?.response?.data?.error || 'Problème lors de la sauvegarde'}`
