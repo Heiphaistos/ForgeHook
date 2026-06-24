@@ -5,6 +5,7 @@
       <div class="panel-header">
         <h2>⚡ Constructeur d'embed</h2>
         <div class="actions">
+          <button @click="openDiscordImport" class="btn-secondary" title="Importer depuis Discord via bot">📥 Import Discord</button>
           <button @click="showExport = true" class="btn-secondary" title="Exporter l'embed">📤 Export</button>
           <button @click="showFonts = true" class="btn-secondary" title="Convertisseur de polices">🔤 Fonts</button>
           <button @click="showTemplates = true" class="btn-secondary" title="Charger un template">📋 Templates</button>
@@ -233,6 +234,74 @@
 
     <EmbedFontsModal v-model="showFonts" @inject="applyFontToField" />
 
+    <!-- Modal Import Discord -->
+    <div v-if="showDiscordImport" class="modal-overlay" @click.self="showDiscordImport = false">
+      <div class="modal di-modal">
+        <h3>📥 Importer depuis Discord</h3>
+
+        <!-- Étape 1 : choisir le bot + channel -->
+        <div v-if="diStep === 1">
+          <div class="section">
+            <label class="fh-label">Bot</label>
+            <select v-model="diBotId" class="fh-select" @change="diChannelId = ''">
+              <option :value="null" disabled>-- Choisir un bot --</option>
+              <option v-for="b in bots" :key="b.id" :value="b.id">{{ b.name }}</option>
+            </select>
+          </div>
+          <div v-if="diBotId" class="section">
+            <label class="fh-label">Salon / Post de forum</label>
+            <BotChannelPicker :bot-id="diBotId" @select="onDiChannelSelect" />
+          </div>
+          <div class="modal-actions">
+            <button @click="fetchDiscordMessages" class="btn-primary"
+              :disabled="!diChannelId || diFetching">
+              {{ diFetching ? '⏳ Récupération...' : '🔍 Récupérer les messages' }}
+            </button>
+            <button @click="showDiscordImport = false" class="btn-secondary">Annuler</button>
+          </div>
+          <p v-if="diError" class="error mt-2">⚠️ {{ diError }}</p>
+        </div>
+
+        <!-- Étape 2 : aperçu + options avant import -->
+        <div v-else-if="diStep === 2">
+          <div class="di-summary">
+            <span class="di-badge">{{ diSteps.length }} étape{{ diSteps.length > 1 ? 's' : '' }} détectée{{ diSteps.length > 1 ? 's' : '' }}</span>
+            <span class="di-badge">{{ diSteps.filter(s => s.imageUrl).length }} image{{ diSteps.filter(s => s.imageUrl).length !== 1 ? 's' : '' }}</span>
+            <span v-if="diSteps.filter(s => !s.imageUrl).length" class="di-badge di-badge-warn">
+              {{ diSteps.filter(s => !s.imageUrl).length }} sans image
+            </span>
+          </div>
+
+          <div class="di-preview-list">
+            <div v-for="(s, i) in diSteps" :key="i" class="di-preview-item">
+              <div class="di-preview-num">{{ i + 1 }}</div>
+              <div class="di-preview-content">
+                <div class="di-preview-text">{{ s.text.slice(0, 100) }}{{ s.text.length > 100 ? '…' : '' }}</div>
+                <div v-if="s.imageUrl" class="di-preview-img-row">
+                  🖼 <span class="di-url">{{ s.imageUrl.slice(0, 60) }}…</span>
+                </div>
+                <div v-else class="di-preview-no-img">
+                  📎 Pas d'image — tu pourras en uploader une dans Mode Étapes
+                  <input type="file" accept="image/*" style="display:none"
+                    :ref="(el) => { if (el) diUploadInputs[i] = el as HTMLInputElement }"
+                    @change="(e) => uploadDiImage(i, e)" />
+                  <button @click="diUploadInputs[i]?.click()" class="btn-secondary"
+                    style="font-size:11px;padding:3px 8px;margin-left:6px">📤 Uploader</button>
+                  <span v-if="s.imageUrl" style="color:#57f287;font-size:11px;margin-left:4px">✅ uploadé</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button @click="applyDiscordImport" class="btn-primary">✅ Créer le template</button>
+            <button @click="diStep = 1" class="btn-secondary">← Retour</button>
+            <button @click="showDiscordImport = false" class="btn-secondary">Annuler</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <ExportModal
       v-model="showExport"
       :payload="embedStore.message"
@@ -299,6 +368,18 @@ const stepCodeLang = ref<string[]>([])
 const stepCodeContent = ref<string[]>([])
 
 const codeLangs = ['bash', 'python', 'javascript', 'typescript', 'json', 'html', 'css', 'sql', 'yaml', 'dockerfile', 'rust', 'go', 'java', 'php', 'csharp', 'cpp', 'xml']
+
+// ─── Import Discord ───────────────────────────────────────────────
+const showDiscordImport = ref(false)
+const diStep = ref(1)
+const diBotId = ref<number | null>(null)
+const diChannelId = ref('')
+const diFetching = ref(false)
+const diError = ref('')
+const diUploadInputs = ref<HTMLInputElement[]>([])
+
+interface DiStep { text: string; imageUrl: string }
+const diSteps = ref<DiStep[]>([])
 const showTemplates = ref(false)
 const showSaveTemplate = ref(false)
 const showFonts = ref(false)
@@ -455,6 +536,92 @@ async function submitTemplate() {
   templates.value = data
 }
 
+// ─── Import Discord ───────────────────────────────────────────────
+function openDiscordImport() {
+  diStep.value = 1
+  diChannelId.value = ''
+  diError.value = ''
+  diSteps.value = []
+  showDiscordImport.value = true
+}
+
+function onDiChannelSelect(sel: { channelId: string } | null) {
+  diChannelId.value = sel?.channelId ?? ''
+}
+
+async function fetchDiscordMessages() {
+  if (!diBotId.value || !diChannelId.value) return
+  diFetching.value = true
+  diError.value = ''
+  try {
+    const { data } = await api.get(`/bots/${diBotId.value}/channels/${diChannelId.value}/messages`, {
+      params: { limit: 100 },
+    })
+    const msgs: any[] = data
+    if (!msgs.length) { diError.value = 'Aucun message trouvé dans ce canal'; return }
+
+    // Convertit les messages en étapes : texte + première image trouvée
+    const steps: DiStep[] = []
+    let textBuf = ''
+
+    for (const m of msgs) {
+      const imgUrl = m.attachments?.[0]?.url ?? m.embed_images?.[0] ?? ''
+      const content = m.content?.trim() ?? ''
+
+      if (content) {
+        textBuf += (textBuf ? '\n' : '') + content
+      }
+      if (imgUrl) {
+        steps.push({ text: textBuf || '(pas de texte)', imageUrl: imgUrl })
+        textBuf = ''
+      }
+    }
+    // Texte restant sans image
+    if (textBuf.trim()) steps.push({ text: textBuf, imageUrl: '' })
+    // Si aucune image dans tout l'export : un step par message
+    if (!steps.length && msgs.length) {
+      msgs.forEach(m => {
+        if (m.content?.trim()) steps.push({ text: m.content.trim(), imageUrl: '' })
+      })
+    }
+
+    diSteps.value = steps
+    diStep.value = 2
+  } catch (e: any) {
+    diError.value = e?.response?.data?.detail ?? e?.response?.data?.error ?? 'Erreur de récupération'
+  } finally {
+    diFetching.value = false
+  }
+}
+
+async function uploadDiImage(index: number, e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  const form = new FormData()
+  form.append('file', file)
+  try {
+    const { data } = await api.post('/uploads', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+    diSteps.value[index].imageUrl = data.url
+    ui.notify('Image uploadée !')
+  } catch { ui.notify('Erreur upload', 'error') }
+}
+
+function applyDiscordImport() {
+  if (!diSteps.value.length) return
+  // Remplace les embeds par les étapes importées
+  embedStore.message.embeds = diSteps.value.map(s => ({
+    ...emptyEmbed(),
+    description: s.text.slice(0, 4096),
+    image: { url: s.imageUrl },
+  }))
+  stepMode.value = true
+  stepShowCode.value = new Array(diSteps.value.length).fill(false)
+  stepCodeLang.value = new Array(diSteps.value.length).fill('bash')
+  stepCodeContent.value = new Array(diSteps.value.length).fill('')
+  showDiscordImport.value = false
+  ui.notify(`${diSteps.value.length} étapes importées depuis Discord ✅`)
+}
+
 function triggerAvatarUpload() { avatarInput.value?.click() }
 
 async function uploadAvatar(e: Event) {
@@ -496,6 +663,19 @@ async function uploadAvatar(e: Event) {
 .step-code-bar { display: flex; gap: 8px; align-items: center; }
 .step-lang-select { font-size: 12px; padding: 4px 8px; flex: 1; }
 .step-code-textarea { font-family: monospace; font-size: 13px; resize: vertical; background: #111214; }
+/* Discord Import modal */
+.di-modal { max-width: 600px; width: 90vw; max-height: 80vh; overflow-y: auto; }
+.di-summary { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.di-badge { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 12px; background: rgba(88,101,242,.2); color: #7289da; }
+.di-badge-warn { background: rgba(250,166,26,.15); color: #faa61a; }
+.di-preview-list { display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto; margin-bottom: 12px; }
+.di-preview-item { display: flex; gap: 10px; background: var(--bg-tertiary); border-radius: 6px; padding: 8px 10px; }
+.di-preview-num { min-width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+.di-preview-content { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.di-preview-text { font-size: 13px; color: var(--text); white-space: pre-wrap; word-break: break-word; }
+.di-preview-img-row { font-size: 11px; color: #3ba55c; display: flex; align-items: center; gap: 4px; }
+.di-preview-no-img { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.di-url { color: #7289da; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px; }
 .field-hint { font-size: 10px; color: var(--text-muted); font-weight: 400; margin-left: 6px; }
 .avatar-row { display: flex; gap: 6px; align-items: center; }
 .avatar-upload-btn { padding: 6px 10px; flex-shrink: 0; }

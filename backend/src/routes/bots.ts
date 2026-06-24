@@ -117,6 +117,35 @@ botRoutes.get('/discord-bot/status', async (c) => {
   }
 })
 
+botRoutes.get('/:id/channels/:channelId/messages', async (c) => {
+  const bot = getBot(Number(c.req.param('id')))
+  if (!bot) return c.json({ error: 'Not found' }, 404)
+  const channelId = c.req.param('channelId')
+  const limit = Math.min(Number(c.req.query('limit') ?? '100'), 100)
+
+  const res = await fetch(
+    `https://discord.com/api/v10/channels/${encodeURIComponent(channelId)}/messages?limit=${limit}`,
+    { headers: { Authorization: `Bot ${bot.token}` }, signal: AbortSignal.timeout(12_000) }
+  )
+  if (!res.ok) return c.json({ error: 'Discord API error', detail: await res.text() }, 422)
+
+  const messages = (await res.json() as any[]).reverse() // chronologique
+  const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp)(\?|$)/i
+
+  return c.json(messages.map((m: any) => ({
+    id: m.id,
+    content: (m.content ?? '').trim(),
+    author: { id: m.author?.id, username: m.author?.username },
+    timestamp: m.timestamp,
+    attachments: (m.attachments ?? [])
+      .filter((a: any) => IMAGE_EXT.test(a.filename ?? '') || IMAGE_EXT.test(a.url ?? ''))
+      .map((a: any) => ({ url: a.url, filename: a.filename, proxy_url: a.proxy_url })),
+    embed_images: (m.embeds ?? [])
+      .filter((e: any) => e.image?.url || e.thumbnail?.url)
+      .map((e: any) => e.image?.url ?? e.thumbnail?.url),
+  })))
+})
+
 botRoutes.get('/:id/guilds/:guildId/threads', async (c) => {
   const bot = getBot(Number(c.req.param('id')))
   if (!bot) return c.json({ error: 'Not found' }, 404)
