@@ -72,24 +72,58 @@
         <div class="section-title">
           <span class="section-num">3</span>
           <span>Embeds Discord</span>
-          <span class="section-hint">Cartes visuelles richement formatées</span>
+          <span class="section-hint">{{ stepMode ? 'Une étape = un embed (titre + explication + screenshot)' : 'Cartes visuelles richement formatées' }}</span>
+          <button @click="stepMode = !stepMode" class="btn-secondary step-toggle-btn">
+            {{ stepMode ? '⚙️ Mode Avancé' : '📚 Mode Étapes' }}
+          </button>
         </div>
 
-        <div v-for="(_, i) in embedStore.message.embeds" :key="i" class="embed-section">
-          <div class="embed-header">
-            <h3>Embed {{ i + 1 }}/{{ embedStore.message.embeds.length }}</h3>
-            <div class="flex gap-2">
-              <button @click="duplicateEmbed(i)" class="btn-secondary" title="Dupliquer">⧉</button>
-              <button @click="embedStore.removeEmbed(i)" class="btn-danger-sm">✕ Supprimer</button>
+        <!-- MODE ÉTAPES : titre + explication + screenshot par étape -->
+        <template v-if="stepMode">
+          <div v-for="(embed, i) in embedStore.message.embeds" :key="i" class="step-card">
+            <div class="step-card-header">
+              <span class="step-badge">Étape {{ i + 1 }}</span>
+              <button v-if="embedStore.message.embeds.length > 1"
+                @click="embedStore.removeEmbed(i)" class="btn-danger-sm">✕ Supprimer</button>
+            </div>
+            <div class="step-fields">
+              <input v-model="embed.title" placeholder="Titre de l'étape (ex: Installation)" class="fh-input" maxlength="256" />
+              <textarea v-model="embed.description" placeholder="Explication détaillée de cette étape..."
+                class="fh-textarea" rows="3" maxlength="4096" />
+              <div class="step-img-row">
+                <input v-model="embed.image!.url" placeholder="URL du screenshot (ou cliquer 📤 pour importer)" class="fh-input" />
+                <input :ref="(el) => { if (el) stepImgInputs[i] = el as HTMLInputElement }"
+                  type="file" accept="image/*" style="display:none" @change="(e) => uploadStepImage(i, e)" />
+                <button @click="stepImgInputs[i]?.click()" class="btn-secondary" title="Importer un screenshot">📤</button>
+              </div>
+              <img v-if="embed.image?.url" :src="embed.image.url" class="step-preview-img" alt="screenshot"
+                @error="($event.target as HTMLImageElement).style.display='none'" />
             </div>
           </div>
-          <EmbedBuilder v-model="embedStore.message.embeds[i]" />
-        </div>
 
-        <button @click="embedStore.addEmbed()" class="btn-add"
-          :disabled="embedStore.message.embeds.length >= 10">
-          + Ajouter un embed ({{ embedStore.message.embeds.length }}/10)
-        </button>
+          <button @click="addStep" class="btn-add" :disabled="embedStore.message.embeds.length >= 10">
+            ➕ Ajouter une étape ({{ embedStore.message.embeds.length }}/10)
+          </button>
+        </template>
+
+        <!-- MODE AVANCÉ : éditeur embed complet -->
+        <template v-else>
+          <div v-for="(_, i) in embedStore.message.embeds" :key="i" class="embed-section">
+            <div class="embed-header">
+              <h3>Embed {{ i + 1 }}/{{ embedStore.message.embeds.length }}</h3>
+              <div class="flex gap-2">
+                <button @click="duplicateEmbed(i)" class="btn-secondary" title="Dupliquer">⧉</button>
+                <button @click="embedStore.removeEmbed(i)" class="btn-danger-sm">✕ Supprimer</button>
+              </div>
+            </div>
+            <EmbedBuilder v-model="embedStore.message.embeds[i]" />
+          </div>
+
+          <button @click="embedStore.addEmbed()" class="btn-add"
+            :disabled="embedStore.message.embeds.length >= 10">
+            + Ajouter un embed ({{ embedStore.message.embeds.length }}/10)
+          </button>
+        </template>
       </div>
 
       <!-- SECTION 4 : Envoyer -->
@@ -238,6 +272,8 @@ const ui = useUiStore()
 const threadId = ref('')
 const sent = ref(false)
 const showJson = ref(false)
+const stepMode = ref(false)
+const stepImgInputs = ref<HTMLInputElement[]>([])
 const showTemplates = ref(false)
 const showSaveTemplate = ref(false)
 const showFonts = ref(false)
@@ -315,6 +351,29 @@ function applyFontToField(text: string, field: string) {
   ui.notify(`Texte inséré dans "${field}" !`)
 }
 
+function addStep() {
+  embedStore.addEmbed()
+  // S'assurer que l'image est bien initialisée sur le nouvel embed
+  const last = embedStore.message.embeds[embedStore.message.embeds.length - 1]
+  if (!last.image) last.image = { url: '' }
+}
+
+async function uploadStepImage(index: number, e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  try {
+    const form = new FormData()
+    form.append('file', file)
+    const { data } = await api.post('/uploads', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+    const embed = embedStore.message.embeds[index]
+    if (!embed.image) embed.image = { url: '' }
+    embed.image.url = data.url
+    ui.notify('Screenshot uploadé !')
+  } catch {
+    ui.notify('Erreur upload screenshot', 'error')
+  }
+}
+
 function duplicateEmbed(i: number) {
   embedStore.message.embeds.push(JSON.parse(JSON.stringify(embedStore.message.embeds[i])))
 }
@@ -379,7 +438,16 @@ async function uploadAvatar(e: Event) {
 .editor-section { border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 16px; }
 .section-title { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .section-num { width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
-.section-hint { font-size: 11px; color: var(--text-muted); margin-left: auto; }
+.section-hint { font-size: 11px; color: var(--text-muted); }
+.step-toggle-btn { margin-left: auto; font-size: 12px; padding: 4px 10px; flex-shrink: 0; }
+/* Step cards */
+.step-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 10px; }
+.step-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.step-badge { font-size: 12px; font-weight: 700; color: var(--accent); background: rgba(88,101,242,.15); padding: 3px 10px; border-radius: 12px; }
+.step-fields { display: flex; flex-direction: column; gap: 8px; }
+.step-img-row { display: flex; gap: 6px; align-items: center; }
+.step-img-row .fh-input { flex: 1; }
+.step-preview-img { max-width: 100%; max-height: 160px; border-radius: 6px; object-fit: cover; border: 1px solid var(--border); margin-top: 4px; }
 .field-hint { font-size: 10px; color: var(--text-muted); font-weight: 400; margin-left: 6px; }
 .avatar-row { display: flex; gap: 6px; align-items: center; }
 .avatar-upload-btn { padding: 6px 10px; flex-shrink: 0; }
