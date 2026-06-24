@@ -121,19 +121,43 @@ botRoutes.get('/:id/guilds/:guildId/threads', async (c) => {
   const bot = getBot(Number(c.req.param('id')))
   if (!bot) return c.json({ error: 'Not found' }, 404)
   const guildId = c.req.param('guildId')
-  const parentId = c.req.query('parent_id') // filtre par forum channel
-  const res = await fetch(`https://discord.com/api/v10/guilds/${encodeURIComponent(guildId)}/threads/active`, {
-    headers: { Authorization: `Bot ${bot.token}` },
-    signal: AbortSignal.timeout(8_000),
+  const parentId = c.req.query('parent_id')
+
+  const headers = { Authorization: `Bot ${bot.token}` }
+
+  // Threads actifs (toute la guilde, filtrés par parent_id)
+  const activeRes = await fetch(`https://discord.com/api/v10/guilds/${encodeURIComponent(guildId)}/threads/active`, {
+    headers, signal: AbortSignal.timeout(8_000),
   })
-  if (!res.ok) return c.json({ error: 'Discord API error', detail: await res.text() }, 422)
-  const data = await res.json() as { threads: any[] }
-  let threads = data.threads ?? []
-  if (parentId) threads = threads.filter((t: any) => t.parent_id === parentId)
+  const activeThreads: any[] = activeRes.ok
+    ? ((await activeRes.json() as { threads: any[] }).threads ?? [])
+    : []
+
+  // Threads archivés du channel forum spécifique
+  let archivedThreads: any[] = []
+  if (parentId) {
+    const archivedRes = await fetch(
+      `https://discord.com/api/v10/channels/${encodeURIComponent(parentId)}/threads/archived/public?limit=100`,
+      { headers, signal: AbortSignal.timeout(8_000) }
+    )
+    if (archivedRes.ok) {
+      archivedThreads = ((await archivedRes.json() as { threads: any[] }).threads ?? [])
+    }
+  }
+
+  // Fusion + dédoublonnage par ID
+  const all = [...activeThreads, ...archivedThreads]
+  const seen = new Set<string>()
+  const unique = all.filter((t: any) => {
+    if (seen.has(t.id)) return false
+    seen.add(t.id)
+    return !parentId || t.parent_id === parentId
+  })
+
   return c.json(
-    threads
+    unique
       .sort((a: any, b: any) => a.name.localeCompare(b.name))
-      .map((t: any) => ({ id: t.id, name: t.name, type: t.type, parent_id: t.parent_id }))
+      .map((t: any) => ({ id: t.id, name: t.name, type: t.type, parent_id: t.parent_id, archived: t.thread_metadata?.archived ?? false }))
   )
 })
 

@@ -32,7 +32,7 @@
         <div v-if="loadingThreads" class="loading-text">Chargement des posts...</div>
         <select v-else v-model="selectedThreadId" @change="onThreadChange" class="picker-select">
           <option value="">-- Choisir un post --</option>
-          <option v-for="t in threads" :key="t.id" :value="t.id">💬 {{ t.name }}</option>
+          <option v-for="t in threads" :key="t.id" :value="t.id">{{ t.archived ? '🔒' : '💬' }} {{ t.name }}</option>
         </select>
         <div v-if="!threads.length && !loadingThreads" class="hint-text">Aucun post actif dans ce forum</div>
       </div>
@@ -56,7 +56,7 @@ const emit = defineEmits<{
 
 interface Guild { id: string; name: string; icon: string | null }
 interface Channel { id: string; name: string; type: number; parent_id: string | null }
-interface Thread { id: string; name: string; type: number; parent_id: string }
+interface Thread { id: string; name: string; type: number; parent_id: string; archived: boolean }
 
 const guilds = ref<Guild[]>([])
 const channels = ref<Channel[]>([])
