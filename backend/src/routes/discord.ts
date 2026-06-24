@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { requireAuth } from '../middleware/auth.js'
 import { getDb } from '../db/index.js'
-import { sendWebhook, type DiscordPayload } from '../services/discord.js'
+import { sendWebhook, editWebhookMessage, type DiscordPayload } from '../services/discord.js'
 import { z } from 'zod'
 
 const sendSchema = z.object({
@@ -25,9 +25,21 @@ discordRoutes.post('/send', async (c) => {
   if (webhook.avatar_url && !payload.avatar_url) payload.avatar_url = webhook.avatar_url
 
   const result = await sendWebhook(webhook.url, payload, body.data.thread_id)
-  db.prepare('INSERT INTO history (webhook_id, webhook_name, payload, status, error) VALUES (?,?,?,?,?)')
-    .run(webhook.id, webhook.name, JSON.stringify(payload), result.status, result.error ?? null)
+  db.prepare('INSERT INTO history (webhook_id, webhook_name, payload, status, error, message_id) VALUES (?,?,?,?,?,?)')
+    .run(webhook.id, webhook.name, JSON.stringify(payload), result.status, result.error ?? null, result.message_id ?? null)
   return c.json(result, result.ok ? 200 : 422)
+})
+
+discordRoutes.patch('/messages/:webhookId/:messageId', async (c) => {
+  const webhookId = Number(c.req.param('webhookId'))
+  const messageId = c.req.param('messageId')
+  const db = getDb()
+  const webhook = db.prepare('SELECT * FROM webhooks WHERE id=?').get(webhookId) as any
+  if (!webhook) return c.json({ error: 'Webhook not found' }, 404)
+  const payload = await c.req.json()
+  const result = await editWebhookMessage(webhook.url, messageId, payload)
+  if (!result.ok) return c.json({ error: result.error }, 422)
+  return c.json({ ok: true })
 })
 
 discordRoutes.post('/test/:webhookId', async (c) => {

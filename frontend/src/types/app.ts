@@ -72,4 +72,5 @@ export interface HistoryEntry {
   send_type?: string
   bot_id?: number | null
   channel_id?: string | null
+  message_id?: string | null
 }

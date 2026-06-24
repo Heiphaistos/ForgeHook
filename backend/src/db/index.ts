@@ -22,6 +22,7 @@ export function getDb(): Database.Database {
       'ALTER TABLE history ADD COLUMN bot_id INTEGER',
       'ALTER TABLE history ADD COLUMN channel_id TEXT',
       "ALTER TABLE history ADD COLUMN send_type TEXT DEFAULT 'webhook'",
+      'ALTER TABLE history ADD COLUMN message_id TEXT',
     ]
     for (const m of migrations) {
       try { db.exec(m) } catch { /* column already exists */ }

@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { requireAuth } from '../middleware/auth.js'
 import { getDb } from '../db/index.js'
+import { sendWebhook } from '../services/discord.js'
 
 export const historyRoutes = new Hono()
 historyRoutes.use('*', requireAuth)
@@ -60,6 +61,18 @@ historyRoutes.get('/', (c) => {
     `SELECT * FROM history WHERE ${where} ORDER BY sent_at DESC LIMIT ? OFFSET ?`
   ).all(...params, limit, offset)
   return c.json(rows)
+})
+
+historyRoutes.post('/:id/resend', async (c) => {
+  const h = getDb().prepare('SELECT * FROM history WHERE id=?').get(Number(c.req.param('id'))) as any
+  if (!h) return c.json({ error: 'Not found' }, 404)
+  if (!h.webhook_id) return c.json({ error: 'Re-send uniquement disponible pour les messages webhook' }, 422)
+  const webhook = getDb().prepare('SELECT * FROM webhooks WHERE id=?').get(h.webhook_id) as any
+  if (!webhook) return c.json({ error: 'Webhook introuvable' }, 404)
+  const result = await sendWebhook(webhook.url, JSON.parse(h.payload))
+  getDb().prepare('INSERT INTO history (webhook_id, webhook_name, payload, status, error, message_id) VALUES (?,?,?,?,?,?)')
+    .run(webhook.id, webhook.name, h.payload, result.status, result.error ?? null, result.message_id ?? null)
+  return c.json(result, result.ok ? 200 : 422)
 })
 
 historyRoutes.delete('/bulk', async (c) => {

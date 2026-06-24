@@ -49,7 +49,13 @@
           <div class="history-time">{{ fmtDate(h.sent_at) }}</div>
           <div class="history-actions">
             <button @click="viewPayload(h)" class="btn-icon-sm" title="Voir payload">👁</button>
-            <button @click="reuse(h)" class="btn-icon-sm" title="Réutiliser">↺</button>
+            <button @click="reuse(h)" class="btn-icon-sm" title="Charger dans l'éditeur">↺</button>
+            <button v-if="h.webhook_id && h.status < 300" @click="resend(h)" class="btn-icon-sm"
+              :class="{ 'resending': resendingId === h.id }" title="Re-envoyer maintenant">
+              {{ resendingId === h.id ? '⏳' : '🔄' }}
+            </button>
+            <button v-if="h.message_id && h.webhook_id && h.send_type !== 'bot'" @click="editMessage(h)"
+              class="btn-icon-sm" title="Modifier le message Discord">✏️</button>
             <button @click="remove(h.id)" class="btn-icon-sm danger" title="Supprimer">✕</button>
           </div>
         </div>
@@ -104,6 +110,7 @@ const filterFrom = ref('')
 const filterTo = ref('')
 const selected = ref<Set<number>>(new Set())
 const payloadModal = ref<HistoryEntry | null>(null)
+const resendingId = ref<number | null>(null)
 
 let debounceTimer: ReturnType<typeof setTimeout>
 function debouncedLoad() {
@@ -176,6 +183,28 @@ function fmtDate(d: string): string {
 
 function viewPayload(h: HistoryEntry) { payloadModal.value = h }
 
+async function resend(h: HistoryEntry) {
+  if (resendingId.value) return
+  resendingId.value = h.id
+  try {
+    await api.post(`/history/${h.id}/resend`)
+    ui.notify('Message re-envoyé ✅')
+    await loadStats()
+  } catch (e: any) {
+    ui.notify(e?.response?.data?.error ?? 'Erreur re-envoi', 'error')
+  } finally {
+    resendingId.value = null
+  }
+}
+
+function editMessage(h: HistoryEntry) {
+  try {
+    embedStore.loadTemplate(JSON.parse(h.payload))
+    router.push(`/embed?edit_webhook=${h.webhook_id}&edit_message=${h.message_id}`)
+    ui.notify('Payload chargé — modifie puis clique "Mettre à jour"')
+  } catch { ui.notify('Impossible de charger ce payload', 'error') }
+}
+
 function reuse(h: HistoryEntry) {
   try {
     embedStore.loadTemplate(JSON.parse(h.payload))
@@ -223,6 +252,7 @@ async function clearAll() {
 .btn-icon-sm { background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-muted); cursor: pointer; padding: 3px 6px; font-size: 12px; }
 .btn-icon-sm:hover { color: #fff; background: var(--bg-secondary); }
 .btn-icon-sm.danger:hover { color: #ed4245; border-color: #ed4245; }
+.btn-icon-sm.resending { opacity: 0.6; cursor: wait; }
 .load-more { text-align: center; margin-top: 16px; }
 .empty-state { color: var(--text-muted); text-align: center; padding: 48px; }
 </style>

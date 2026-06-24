@@ -81,8 +81,26 @@
 
         <!-- MODE ÉTAPES : titre + explication + code + screenshot par étape -->
         <template v-if="stepMode">
-          <div v-for="(embed, i) in embedStore.message.embeds" :key="i" class="step-card">
+          <!-- Couleur globale pour toutes les étapes -->
+          <div class="step-global-color">
+            <label class="fh-label">🎨 Couleur de toutes les étapes</label>
+            <div class="step-color-row">
+              <input type="color" v-model="stepGlobalColor" @input="applyGlobalColor" class="step-color-input" />
+              <span class="step-color-hex">{{ stepGlobalColor }}</span>
+              <button @click="stepGlobalColor = '#5865F2'; applyGlobalColor()" class="btn-secondary" style="font-size:11px;padding:3px 8px">Reset</button>
+            </div>
+          </div>
+
+          <div v-for="(embed, i) in embedStore.message.embeds" :key="i" class="step-card"
+            :class="{ dragging: dragIdx === i, dragover: dropIdx === i }"
+            draggable="true"
+            @dragstart="dragIdx = i"
+            @dragend="dragIdx = -1; dropIdx = -1"
+            @dragover.prevent="dropIdx = i"
+            @dragleave="dropIdx = -1"
+            @drop.prevent="dropStep(i)">
             <div class="step-card-header">
+              <span class="drag-handle" title="Glisser pour réordonner">⠿</span>
               <span class="step-badge">Étape {{ i + 1 }}</span>
               <div style="display:flex;gap:6px">
                 <button @click="toggleStepCode(i)" class="btn-secondary step-code-btn"
@@ -151,13 +169,21 @@
       <div class="editor-section send-section">
         <div class="section-title">
           <span class="section-num">4</span>
-          <span>Envoyer</span>
+          <span>{{ isEditMode ? '✏️ Mettre à jour le message' : 'Envoyer' }}</span>
+          <span v-if="isEditMode" class="edit-mode-badge">Mode édition actif</span>
+        </div>
+
+        <!-- Bannière mode édition -->
+        <div v-if="isEditMode" class="edit-mode-banner">
+          ✏️ Tu modifies un message existant — clique <strong>Mettre à jour</strong> pour appliquer les changements sur Discord.
+          <button @click="router.push('/embed')" class="btn-secondary" style="font-size:11px;padding:3px 8px;margin-left:8px">✕ Annuler édition</button>
         </div>
 
         <!-- Mode toggle -->
         <div class="send-mode-tabs">
           <button :class="{ active: sendMode === 'webhook' }" @click="sendMode = 'webhook'">🔗 Webhook</button>
           <button :class="{ active: sendMode === 'bot' }" @click="sendMode = 'bot'">🤖 Bot Discord</button>
+          <button :class="{ active: sendMode === 'schedule' }" @click="sendMode = 'schedule'">⏰ Programmer</button>
         </div>
 
         <!-- Mode Webhook -->
@@ -169,13 +195,13 @@
           <input v-model="threadId" placeholder="Thread ID (optionnel)" class="fh-input" style="width:160px" />
           <button @click="sendWebhook" class="btn-primary send-btn"
             :disabled="embedStore.sending || !embedStore.selectedWebhookId">
-            {{ embedStore.sending ? '⏳ Envoi...' : '🚀 Envoyer' }}
+            {{ embedStore.sending ? '⏳ Envoi...' : isEditMode ? '✏️ Mettre à jour' : '🚀 Envoyer' }}
           </button>
           <button @click="embedStore.reset()" class="btn-secondary">🗑</button>
         </div>
 
         <!-- Mode Bot -->
-        <div v-else class="send-bot-area">
+        <div v-else-if="sendMode === 'bot'" class="send-bot-area">
           <div class="bot-select-row">
             <label class="fh-label" style="margin-bottom:4px">Bot</label>
             <select v-model="selectedBotId" class="fh-select">
@@ -191,6 +217,35 @@
             </button>
             <button @click="embedStore.reset()" class="btn-secondary">🗑</button>
           </div>
+        </div>
+
+        <!-- Mode Schedule -->
+        <div v-else-if="sendMode === 'schedule'" class="send-area" style="flex-direction:column;gap:10px">
+          <div>
+            <label class="fh-label">Nom du job</label>
+            <input v-model="schedName" placeholder="Ex: Annonce hebdo" class="fh-input" />
+          </div>
+          <div>
+            <label class="fh-label">Webhook</label>
+            <select v-model="embedStore.selectedWebhookId" class="fh-select">
+              <option :value="null" disabled>Choisir un webhook</option>
+              <option v-for="w in webhookStore.webhooks" :key="w.id" :value="w.id">{{ w.name }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="fh-label">Expression cron</label>
+            <input v-model="schedCron" placeholder="0 9 * * 1 (lundi 9h)" class="fh-input" />
+            <div class="cron-presets">
+              <button @click="schedCron='0 9 * * *'" class="preset-btn">Chaque jour 9h</button>
+              <button @click="schedCron='0 9 * * 1'" class="preset-btn">Chaque lundi 9h</button>
+              <button @click="schedCron='0 9 1 * *'" class="preset-btn">1er du mois 9h</button>
+              <button @click="schedCron='0 */4 * * *'" class="preset-btn">Toutes les 4h</button>
+            </div>
+          </div>
+          <button @click="createSchedule" class="btn-primary send-btn"
+            :disabled="!schedName || !schedCron || !embedStore.selectedWebhookId">
+            ⏰ Créer le job planifié
+          </button>
         </div>
 
         <p v-if="sendMode === 'webhook' && !embedStore.selectedWebhookId" class="send-hint">⚠️ Sélectionnez un webhook</p>
@@ -342,7 +397,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import EmbedBuilder from '../components/embed/EmbedBuilder.vue'
 import DiscordPreview from '../components/preview/DiscordPreview.vue'
 import EmbedTemplatesModal from '../components/modals/EmbedTemplatesModal.vue'
@@ -357,7 +412,13 @@ import type { Template } from '../types/app'
 import api from '../api/client'
 
 const router = useRouter()
+const route = useRoute()
 const embedStore = useEmbedStore()
+
+// Mode édition : /embed?edit_webhook=X&edit_message=Y
+const editWebhookId = computed(() => route.query.edit_webhook ? Number(route.query.edit_webhook) : null)
+const editMessageId = computed(() => route.query.edit_message as string | null ?? null)
+const isEditMode = computed(() => !!(editWebhookId.value && editMessageId.value))
 const webhookStore = useWebhooksStore()
 const ui = useUiStore()
 
@@ -369,6 +430,11 @@ const stepImgInputs = ref<HTMLInputElement[]>([])
 const stepShowCode = ref<boolean[]>([])
 const stepCodeLang = ref<string[]>([])
 const stepCodeContent = ref<string[]>([])
+const stepGlobalColor = ref('#5865F2')
+const dragIdx = ref(-1)
+const dropIdx = ref(-1)
+const schedName = ref('')
+const schedCron = ref('')
 
 const codeLangs = ['bash', 'python', 'javascript', 'typescript', 'json', 'html', 'css', 'sql', 'yaml', 'dockerfile', 'rust', 'go', 'java', 'php', 'csharp', 'cpp', 'xml']
 
@@ -387,7 +453,7 @@ const showTemplates = ref(false)
 const showSaveTemplate = ref(false)
 const showFonts = ref(false)
 const showExport = ref(false)
-const sendMode = ref<'webhook' | 'bot'>('webhook')
+const sendMode = ref<'webhook' | 'bot' | 'schedule'>('webhook')
 const templates = ref<Template[]>([])
 const tplForm = ref({ name: '', description: '', category: 'Annonces' })
 const tplNameError = ref(false)
@@ -415,6 +481,20 @@ onMounted(async () => {
 })
 
 async function sendWebhook() {
+  if (isEditMode.value && editWebhookId.value && editMessageId.value) {
+    try {
+      await api.patch(`/discord/messages/${editWebhookId.value}/${editMessageId.value}`, {
+        content: embedStore.message.content || undefined,
+        embeds: embedStore.message.embeds.length ? embedStore.message.embeds : undefined,
+      })
+      sent.value = true
+      ui.notify('Message mis à jour ✅')
+      setTimeout(() => { router.push('/history') }, 2000)
+    } catch (e: any) {
+      ui.notify(e?.response?.data?.error ?? 'Erreur mise à jour', 'error')
+    }
+    return
+  }
   await embedStore.send(threadId.value || undefined)
   if (!embedStore.lastError) {
     sent.value = true
@@ -627,6 +707,54 @@ function applyDiscordImport() {
   ui.notify(`${diSteps.value.length} étapes importées depuis Discord ✅`)
 }
 
+function applyGlobalColor() {
+  const hex = stepGlobalColor.value.replace('#', '')
+  const color = parseInt(hex, 16)
+  embedStore.message.embeds.forEach(e => { e.color = color })
+}
+
+function dropStep(targetIdx: number) {
+  if (dragIdx.value === -1 || dragIdx.value === targetIdx) return
+  const embeds = embedStore.message.embeds
+  const moved = embeds.splice(dragIdx.value, 1)[0]
+  embeds.splice(targetIdx, 0, moved)
+  const reorder = <T>(arr: T[], from: number, to: number): T[] => {
+    const copy = [...arr]
+    const [item] = copy.splice(from, 1)
+    copy.splice(to, 0, item)
+    return copy
+  }
+  stepShowCode.value = reorder(stepShowCode.value, dragIdx.value, targetIdx)
+  stepCodeLang.value = reorder(stepCodeLang.value, dragIdx.value, targetIdx)
+  stepCodeContent.value = reorder(stepCodeContent.value, dragIdx.value, targetIdx)
+  dragIdx.value = -1
+  dropIdx.value = -1
+}
+
+async function createSchedule() {
+  if (!schedName.value || !schedCron.value || !embedStore.selectedWebhookId) return
+  try {
+    await api.post('/scheduler', {
+      name: schedName.value,
+      webhook_id: embedStore.selectedWebhookId,
+      payload: {
+        content: embedStore.message.content || undefined,
+        username: embedStore.message.username || undefined,
+        avatar_url: embedStore.message.avatar_url || undefined,
+        embeds: embedStore.message.embeds.length ? embedStore.message.embeds : undefined,
+      },
+      cron_expr: schedCron.value,
+      enabled: true,
+    })
+    ui.notify(`Job "${schedName.value}" planifié ✅`)
+    schedName.value = ''
+    schedCron.value = ''
+    sendMode.value = 'webhook'
+  } catch (e: any) {
+    ui.notify(e?.response?.data?.error ?? 'Erreur création job', 'error')
+  }
+}
+
 function triggerAvatarUpload() { avatarInput.value?.click() }
 
 async function uploadAvatar(e: Event) {
@@ -703,4 +831,20 @@ async function uploadAvatar(e: Event) {
 .gap-2 { gap: 8px; }
 .mt-4 { margin-top: 16px; }
 .mt-2 { margin-top: 8px; }
+/* Global color — step mode */
+.step-global-color { background: var(--bg-tertiary); border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; }
+.step-color-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.step-color-input { width: 40px; height: 32px; border: none; border-radius: 4px; cursor: pointer; background: none; padding: 0; }
+.step-color-hex { font-size: 12px; color: var(--text-muted); font-family: monospace; }
+/* Drag & drop */
+.drag-handle { cursor: grab; color: var(--text-muted); font-size: 16px; padding: 0 4px; user-select: none; }
+.step-card.dragging { opacity: 0.4; }
+.step-card.dragover { border-color: var(--accent); background: rgba(88,101,242,.1); }
+/* Cron presets */
+.cron-presets { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.preset-btn { background: var(--bg-tertiary); border: 1px solid var(--border); color: var(--text-muted); border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer; }
+.preset-btn:hover { border-color: var(--accent); color: var(--text); }
+/* Edit mode */
+.edit-mode-badge { font-size: 10px; background: rgba(250,166,26,.2); color: #faa61a; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+.edit-mode-banner { background: rgba(250,166,26,.1); border: 1px solid rgba(250,166,26,.3); border-radius: 6px; padding: 10px 14px; font-size: 13px; color: #faa61a; margin-bottom: 10px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 </style>

@@ -179,9 +179,37 @@
               <option v-for="b in sendBots" :key="b.id" :value="b.id">{{ b.name }}</option>
             </select>
           </div>
+
+          <!-- Liste destinations ajoutées -->
+          <div v-if="botDestinations.length" class="section">
+            <label class="fh-label">📌 Destinations ({{ botDestinations.length }})</label>
+            <div class="dest-list">
+              <div v-for="(d, i) in botDestinations" :key="i" class="dest-tag">
+                <span>#{{ d.label }}</span>
+                <button @click="removeDestination(i)" class="dest-remove">✕</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Picker pour ajouter une destination -->
           <div class="section">
-            <label class="fh-label">Serveur &amp; Channel *</label>
-            <BotChannelPicker :bot-id="sendBotId" @select="onBotChannelSelect" />
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+              <label class="fh-label" style="margin:0">
+                {{ botDestinations.length ? '➕ Ajouter un canal' : 'Canal *' }}
+              </label>
+              <button v-if="!pickingDest && botDestinations.length" @click="pickingDest = true"
+                class="btn-secondary" style="font-size:11px;padding:3px 8px">+ Ajouter</button>
+            </div>
+            <div v-if="!botDestinations.length || pickingDest">
+              <BotChannelPicker :bot-id="sendBotId" @select="onBotChannelSelect" />
+              <div v-if="pickingDest" style="display:flex;gap:6px;margin-top:6px">
+                <button @click="addDestination" class="btn-primary"
+                  :disabled="!lastPickedDest" style="font-size:12px;padding:5px 12px">
+                  ✓ Ajouter ce canal
+                </button>
+                <button @click="pickingDest = false" class="btn-secondary" style="font-size:12px;padding:5px 10px">Annuler</button>
+              </div>
+            </div>
           </div>
         </template>
 
@@ -205,8 +233,10 @@
 
         <div class="modal-actions">
           <button @click="doSend" class="btn-primary"
-            :disabled="(sendMode === 'webhook' ? !sendWebhookId : !sendBotChannelId) || sending || !sendParts.length">
-            {{ sending ? `⏳ Envoi ${sendProgress}/${sendParts.length}…` : `🚀 Envoyer (${sendParts.length} msg)` }}
+            :disabled="(sendMode === 'webhook' ? !sendWebhookId : (!sendBotChannelId && !botDestinations.length)) || sending || !sendParts.length">
+            {{ sending
+              ? `⏳ Envoi ${sendProgress}/${sendParts.length * Math.max(1, botDestinations.length)}…`
+              : `🚀 Envoyer${botDestinations.length > 1 ? ` × ${botDestinations.length} canaux` : ''} (${sendParts.length} msg)` }}
           </button>
           <button @click="showSendModal = false" class="btn-secondary">Annuler</button>
         </div>
@@ -412,9 +442,25 @@ const sendError = ref('')
 const sending = ref(false)
 const sendProgress = ref(0)
 
-function onBotChannelSelect(sel: { channelId: string } | null) {
+// Multi-destinations (mode bot)
+interface BotDest { channelId: string; label: string }
+const botDestinations = ref<BotDest[]>([])
+const pickingDest = ref(false)
+const lastPickedDest = ref<{ channelId: string; channelName: string } | null>(null)
+
+function onBotChannelSelect(sel: { channelId: string; channelName: string } | null) {
   sendBotChannelId.value = sel?.channelId ?? ''
+  lastPickedDest.value = sel ? { channelId: sel.channelId, channelName: sel.channelName } : null
 }
+
+function addDestination() {
+  if (!lastPickedDest.value) return
+  const already = botDestinations.value.some(d => d.channelId === lastPickedDest.value!.channelId)
+  if (!already) botDestinations.value.push({ channelId: lastPickedDest.value.channelId, label: lastPickedDest.value.channelName })
+  pickingDest.value = false
+}
+
+function removeDestination(i: number) { botDestinations.value.splice(i, 1) }
 
 function tutorialToDiscordParts(blocks: TutorialBlock[], title: string): any[] {
   const calloutEmoji: Record<string, string> = { warning: '⚠️', success: '✅', danger: '❌', info: 'ℹ️' }
@@ -488,56 +534,64 @@ async function openSendModal() {
   showSendModal.value = true
 }
 
+async function sendPartsTo(channelId: string | null) {
+  for (let pi = 0; pi < sendParts.value.length; pi++) {
+    const part = sendParts.value[pi]
+    let attempts = 3
+    while (attempts > 0) {
+      try {
+        if (sendMode.value === 'webhook') {
+          if (!sendWebhookId.value) return
+          await api.post('/discord/send', {
+            webhook_id: sendWebhookId.value,
+            payload: part,
+            thread_id: sendThreadId.value || undefined,
+          })
+        } else {
+          const cid = channelId ?? sendBotChannelId.value
+          if (!sendBotId.value || !cid) return
+          await api.post('/bots/send', { bot_id: sendBotId.value, channel_id: cid, payload: part })
+        }
+        sendProgress.value++
+        break
+      } catch (e: any) {
+        let retryAfter: number | null = null
+        const errStr = e?.response?.data?.error
+        if (typeof errStr === 'string') {
+          try { retryAfter = JSON.parse(errStr)?.retry_after ?? null } catch {}
+        }
+        if (retryAfter && attempts > 1) {
+          await new Promise(r => setTimeout(r, Math.ceil(retryAfter! * 1000) + 300))
+          attempts--
+        } else {
+          let msg = errStr ?? 'Erreur lors de l\'envoi'
+          try { msg = JSON.parse(msg)?.message ?? msg } catch {}
+          throw new Error(msg)
+        }
+      }
+    }
+    if (pi < sendParts.value.length - 1) await new Promise(r => setTimeout(r, 600))
+  }
+}
+
 async function doSend() {
   if (!sendParts.value.length) return
   sending.value = true
   sendError.value = ''
   sendProgress.value = 0
   try {
-    for (let pi = 0; pi < sendParts.value.length; pi++) {
-      const part = sendParts.value[pi]
-      let attempts = 3
-      while (attempts > 0) {
-        try {
-          if (sendMode.value === 'webhook') {
-            if (!sendWebhookId.value) return
-            await api.post('/discord/send', {
-              webhook_id: sendWebhookId.value,
-              payload: part,
-              thread_id: sendThreadId.value || undefined,
-            })
-          } else {
-            if (!sendBotId.value || !sendBotChannelId.value) return
-            await api.post('/bots/send', {
-              bot_id: sendBotId.value,
-              channel_id: sendBotChannelId.value,
-              payload: part,
-            })
-          }
-          sendProgress.value++
-          break
-        } catch (e: any) {
-          // Extraire retry_after depuis la réponse Discord (encapsulée en string)
-          let retryAfter: number | null = null
-          const errStr = e?.response?.data?.error
-          if (typeof errStr === 'string') {
-            try { retryAfter = JSON.parse(errStr)?.retry_after ?? null } catch {}
-          }
-          if (retryAfter && attempts > 1) {
-            await new Promise(r => setTimeout(r, Math.ceil(retryAfter! * 1000) + 300))
-            attempts--
-          } else {
-            let msg = errStr ?? 'Erreur lors de l\'envoi'
-            try { msg = JSON.parse(msg)?.message ?? msg } catch {}
-            throw new Error(msg)
-          }
-        }
-      }
-      // Délai de sécurité entre messages multiples
-      if (pi < sendParts.value.length - 1) await new Promise(r => setTimeout(r, 600))
+    const dests = sendMode.value === 'bot' && botDestinations.value.length > 0
+      ? botDestinations.value.map(d => d.channelId)
+      : [null]
+    for (const dest of dests) {
+      await sendPartsTo(dest)
+      if (dests.length > 1 && dest !== dests[dests.length - 1]) await new Promise(r => setTimeout(r, 1000))
     }
     showSendModal.value = false
-    saveMsg.value = '✅ Tutoriel envoyé sur Discord !'
+    const destCount = dests.length
+    saveMsg.value = destCount > 1
+      ? `✅ Tutoriel envoyé sur ${destCount} canaux !`
+      : '✅ Tutoriel envoyé sur Discord !'
     setTimeout(() => { saveMsg.value = '' }, 3000)
   } catch (e: any) {
     sendError.value = e?.message ?? 'Erreur lors de l\'envoi'
@@ -832,6 +886,10 @@ function youtubeEmbed(url: string): string {
 .progress-bar-wrap { position: relative; height: 8px; background: var(--bg-tertiary); border-radius: 4px; margin: 10px 0; overflow: hidden; }
 .progress-bar { height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.3s; }
 .progress-label { position: absolute; right: 0; top: -18px; font-size: 11px; color: var(--text-muted); }
+.dest-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.dest-tag { display: flex; align-items: center; gap: 4px; background: rgba(88,101,242,.15); border: 1px solid rgba(88,101,242,.3); border-radius: 16px; padding: 4px 10px; font-size: 12px; color: #7289da; }
+.dest-remove { background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 11px; padding: 0 2px; line-height: 1; }
+.dest-remove:hover { color: #ed4245; }
 
 /* Template convert modal */
 .tpl-convert-modal { max-width: 620px; }
