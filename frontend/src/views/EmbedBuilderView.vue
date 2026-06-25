@@ -967,7 +967,8 @@ async function uploadAvatar(e: Event) {
 </script>
 
 <style scoped>
-.preview-scroll-area { flex: 1; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.preview-scroll-area { flex: 1; overflow-y: auto; min-height: 0; }
+.preview-scroll-area > * { flex-shrink: 0; margin-bottom: 8px; }
 .inline-toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .editor-section { border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 16px; }
 .section-title { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
