@@ -309,3 +309,13 @@ body {
 .badge-error { background: rgba(237,66,69,.15); color: #ed4245; }
 .badge-info { background: rgba(88,101,242,.15); color: #5865f2; }
 .badge-warn { background: rgba(254,231,92,.15); color: #fee75c; }
+
+.embed-chunk-hint {
+  font-size: 12px;
+  color: #fee75c;
+  background: rgba(254,231,92,.08);
+  border: 1px solid rgba(254,231,92,.25);
+  border-radius: 4px;
+  padding: 6px 10px;
+  margin-top: 6px;
+}

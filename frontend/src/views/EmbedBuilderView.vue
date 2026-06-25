@@ -147,9 +147,12 @@
             </div>
           </div>
 
-          <button @click="addStep" class="btn-add" :disabled="embedStore.message.embeds.length >= 10">
-            ➕ Ajouter une étape ({{ embedStore.message.embeds.length }}/10)
+          <button @click="addStep" class="btn-add" :disabled="embedStore.message.embeds.length >= 100">
+            ➕ Ajouter une étape ({{ embedStore.message.embeds.length }}/100)
           </button>
+          <div v-if="embedStore.message.embeds.length > 10" class="embed-chunk-hint">
+            ℹ️ {{ Math.ceil(embedStore.message.embeds.length / 10) }} messages Discord seront envoyés (10 étapes/message)
+          </div>
         </template>
 
         <!-- MODE AVANCÉ : éditeur embed complet -->
@@ -166,9 +169,12 @@
           </div>
 
           <button @click="embedStore.addEmbed()" class="btn-add"
-            :disabled="embedStore.message.embeds.length >= 10">
-            + Ajouter un embed ({{ embedStore.message.embeds.length }}/10)
+            :disabled="embedStore.message.embeds.length >= 100">
+            + Ajouter un embed ({{ embedStore.message.embeds.length }}/100)
           </button>
+          <div v-if="embedStore.message.embeds.length > 10" class="embed-chunk-hint">
+            ℹ️ {{ Math.ceil(embedStore.message.embeds.length / 10) }} messages Discord seront envoyés (max 10 embeds/message)
+          </div>
         </template>
       </div>
 
@@ -639,7 +645,17 @@ function applyVarsToMessage(msg: any): any {
   return m
 }
 
+function checkEmbedLimit(): boolean {
+  const n = embedStore.message.embeds.length
+  if (n > 100) {
+    ui.notify(`❌ ${n} embeds — maximum 100 supporté. Supprimez ${n - 100} embed(s).`, 'error')
+    return false
+  }
+  return true
+}
+
 async function sendWebhook() {
+  if (!checkEmbedLimit()) return
   if (isEditMode.value && editWebhookId.value && editMessageId.value) {
     try {
       await api.patch(`/discord/messages/${editWebhookId.value}/${editMessageId.value}`, {
@@ -677,6 +693,7 @@ async function sendWebhook() {
 
 async function sendViaBot() {
   if (!selectedBotId.value || !selectedChannelId.value) return
+  if (!checkEmbedLimit()) return
   botSending.value = true
   botError.value = ''
   try {
@@ -758,8 +775,8 @@ function duplicateEmbed(i: number) {
 
 function loadUserTemplate(t: Template) {
   try {
-    embedStore.loadTemplate(JSON.parse(t.payload))
-    ui.notify(`Template "${t.name}" chargé`)
+    const truncated = embedStore.loadTemplate(JSON.parse(t.payload))
+    ui.notify(truncated ? `Template "${t.name}" chargé (tronqué à 10 embeds)` : `Template "${t.name}" chargé`)
   } catch {
     ui.notify('Impossible de parser le template', 'error')
   }
@@ -905,6 +922,7 @@ function dropStep(targetIdx: number) {
 
 async function createSchedule() {
   if (!schedName.value || !schedCron.value || !embedStore.selectedWebhookId) return
+  if (!checkEmbedLimit()) return
   try {
     await api.post('/scheduler', {
       name: schedName.value,
@@ -932,16 +950,17 @@ function applyJsonImport() {
   try {
     const parsed = JSON.parse(jsonImportRaw.value)
     if (typeof parsed !== 'object' || parsed === null) throw new Error('JSON invalide')
+    let truncated = false
     if (parsed.embeds !== undefined || parsed.content !== undefined) {
-      embedStore.loadTemplate(parsed)
+      truncated = embedStore.loadTemplate(parsed)
     } else if (parsed.title !== undefined || parsed.description !== undefined) {
-      embedStore.loadTemplate({ content: '', embeds: [parsed] })
+      truncated = embedStore.loadTemplate({ content: '', embeds: [parsed] })
     } else {
       throw new Error('Format non reconnu. Attendu: payload webhook ou embed Discord.')
     }
     showJsonImport.value = false
     jsonImportRaw.value = ''
-    ui.notify('Payload JSON importé ✅')
+    ui.notify(truncated ? 'JSON importé ✅ (tronqué à 10 embeds max Discord)' : 'Payload JSON importé ✅')
   } catch (e: any) {
     jsonImportError.value = e.message ?? 'JSON invalide'
   }

@@ -85,7 +85,7 @@ export const useEmbedStore = defineStore('embed', () => {
   }
 
   function addEmbed() {
-    if (message.embeds.length >= 10) return
+    if (message.embeds.length >= 100) return
     snapshot()
     message.embeds.push(emptyEmbed())
   }
@@ -107,22 +107,33 @@ export const useEmbedStore = defineStore('embed', () => {
     clearDraft()
   }
 
+  // Découpe les embeds en chunks de 10 (limite Discord) et envoie plusieurs messages
   async function send(threadId?: string) {
     if (!selectedWebhookId.value) return
     sending.value = true
     lastError.value = null
     try {
-      await api.post('/discord/send', {
-        webhook_id: selectedWebhookId.value,
-        payload: {
-          content: message.content || undefined,
-          username: message.username || undefined,
-          avatar_url: message.avatar_url || undefined,
-          tts: message.tts || undefined,
-          embeds: message.embeds.length ? message.embeds : undefined,
-        },
-        thread_id: threadId || undefined,
-      })
+      const chunks: (typeof message.embeds)[] = []
+      if (message.embeds.length === 0) {
+        chunks.push([])
+      } else {
+        for (let i = 0; i < message.embeds.length; i += 10) {
+          chunks.push(message.embeds.slice(i, i + 10))
+        }
+      }
+      for (let c = 0; c < chunks.length; c++) {
+        await api.post('/discord/send', {
+          webhook_id: selectedWebhookId.value,
+          payload: {
+            content: c === 0 ? (message.content || undefined) : undefined,
+            username: message.username || undefined,
+            avatar_url: message.avatar_url || undefined,
+            tts: c === 0 ? (message.tts || undefined) : undefined,
+            embeds: chunks[c].length ? chunks[c] : undefined,
+          },
+          thread_id: threadId || undefined,
+        })
+      }
       clearDraft()
     } catch (e: any) {
       lastError.value = e.response?.data?.error ?? 'Send failed'
@@ -134,8 +145,13 @@ export const useEmbedStore = defineStore('embed', () => {
   function loadTemplate(payload: any) {
     snapshot()
     const fresh = emptyMessage()
-    Object.assign(message, { ...fresh, ...payload })
+    const loaded = { ...fresh, ...payload }
+    if (Array.isArray(loaded.embeds) && loaded.embeds.length > 100) {
+      loaded.embeds = loaded.embeds.slice(0, 100)
+    }
+    Object.assign(message, loaded)
     saveDraftNow()
+    return Array.isArray(payload.embeds) && payload.embeds.length > 100
   }
 
   return {
