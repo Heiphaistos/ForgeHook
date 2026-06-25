@@ -23,6 +23,9 @@ discordRoutes.post('/send', async (c) => {
   const payload = body.data.payload as DiscordPayload
   if (webhook.username && !payload.username) payload.username = webhook.username
   if (webhook.avatar_url && !payload.avatar_url) payload.avatar_url = webhook.avatar_url
+  if (Array.isArray(payload.embeds) && payload.embeds.length > 10) {
+    return c.json({ error: `Trop d'embeds (${payload.embeds.length}) — maximum 10 par message Discord.` }, 400)
+  }
 
   const result = await sendWebhook(webhook.url, payload, body.data.thread_id)
   db.prepare('INSERT INTO history (webhook_id, webhook_name, payload, status, error, message_id) VALUES (?,?,?,?,?,?)')

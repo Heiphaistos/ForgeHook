@@ -654,16 +654,24 @@ function checkEmbedLimit(): boolean {
   return true
 }
 
+function chunkEmbeds(embeds: any[]): any[][] {
+  if (!embeds.length) return [[]]
+  const chunks: any[][] = []
+  for (let i = 0; i < embeds.length; i += 10) chunks.push(embeds.slice(i, i + 10))
+  return chunks
+}
+
 async function sendWebhook() {
   if (!checkEmbedLimit()) return
   if (isEditMode.value && editWebhookId.value && editMessageId.value) {
+    // Mode édition : Discord limite à 10 embeds par message, on tronque
     try {
       await api.patch(`/discord/messages/${editWebhookId.value}/${editMessageId.value}`, {
         content: embedStore.message.content || undefined,
-        embeds: embedStore.message.embeds.length ? embedStore.message.embeds : undefined,
+        embeds: embedStore.message.embeds.length ? embedStore.message.embeds.slice(0, 10) : undefined,
       })
       sent.value = true
-      ui.notify('Message mis à jour ✅')
+      ui.notify(embedStore.message.embeds.length > 10 ? 'Message mis à jour ✅ (10 premiers embeds)' : 'Message mis à jour ✅')
       setTimeout(() => { router.push('/history') }, 2000)
     } catch (e: any) {
       ui.notify(e?.response?.data?.error ?? 'Erreur mise à jour', 'error')
@@ -672,17 +680,24 @@ async function sendWebhook() {
   }
   await embedStore.send(threadId.value || undefined)
   if (!embedStore.lastError) {
-    // Multi-webhook supplémentaires
+    // Multi-webhook supplémentaires — même chunking
     if (multiWebhookIds.value.length) {
-      const payload = applyVarsToMessage({
+      const baseMsg = applyVarsToMessage({
         content: embedStore.message.content || undefined,
         username: embedStore.message.username || undefined,
         avatar_url: embedStore.message.avatar_url || undefined,
-        embeds: embedStore.message.embeds.length ? embedStore.message.embeds : undefined,
+        embeds: embedStore.message.embeds,
       })
-      await Promise.allSettled(multiWebhookIds.value.map(wid =>
-        api.post('/discord/send', { webhook_id: wid, payload, thread_id: threadId.value || undefined })
-      ))
+      const chunks = chunkEmbeds(baseMsg.embeds ?? [])
+      for (const chunk of chunks) {
+        await Promise.allSettled(multiWebhookIds.value.map(wid =>
+          api.post('/discord/send', {
+            webhook_id: wid,
+            payload: { ...baseMsg, embeds: chunk.length ? chunk : undefined },
+            thread_id: threadId.value || undefined,
+          })
+        ))
+      }
     }
     sent.value = true
     const total = 1 + multiWebhookIds.value.length
@@ -697,14 +712,17 @@ async function sendViaBot() {
   botSending.value = true
   botError.value = ''
   try {
-    await api.post('/bots/send', {
-      bot_id: selectedBotId.value,
-      channel_id: selectedChannelId.value,
-      payload: {
-        content: embedStore.message.content || undefined,
-        embeds: embedStore.message.embeds.length ? embedStore.message.embeds : undefined,
-      },
-    })
+    const chunks = chunkEmbeds(embedStore.message.embeds)
+    for (let c = 0; c < chunks.length; c++) {
+      await api.post('/bots/send', {
+        bot_id: selectedBotId.value,
+        channel_id: selectedChannelId.value,
+        payload: {
+          content: c === 0 ? (embedStore.message.content || undefined) : undefined,
+          embeds: chunks[c].length ? chunks[c] : undefined,
+        },
+      })
+    }
     sent.value = true
     ui.notify(`Message envoyé via bot dans #${selectedChannelName.value} !`)
     setTimeout(() => { router.push('/history') }, 2000)
