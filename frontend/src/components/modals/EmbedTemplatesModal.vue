@@ -29,7 +29,21 @@
           <span class="badge badge-success" style="font-size:10px;margin-top:6px">Prêt à l'emploi</span>
         </div>
 
-        <div v-if="!filteredUserTemplates.length && !filteredPresets.length"
+        <div v-for="t in filteredTutorials" :key="`tuto-${t.id}`" class="tpl-card tuto-tpl"
+          :class="{ 'tpl-card--loading': loadingConvert }"
+          @click="!loadingConvert && loadTutorial(t)">
+          <div class="tpl-card-icon">📖</div>
+          <strong style="font-size:13px">{{ t.title }}</strong>
+          <p style="color:var(--text-muted);font-size:11px;margin-top:2px">{{ t.description || 'Sans description' }}</p>
+          <span class="badge badge-success" style="font-size:10px;margin-top:6px">→ Embed</span>
+        </div>
+
+        <div v-if="activeCat === 'Mes tutoriaux' && loadingTutorials"
+          style="color:var(--text-muted);text-align:center;padding:24px;grid-column:1/-1">
+          Chargement des tutoriaux…
+        </div>
+
+        <div v-if="!filteredUserTemplates.length && !filteredPresets.length && !filteredTutorials.length && !loadingTutorials"
           style="color:var(--text-muted);text-align:center;padding:24px;grid-column:1/-1">
           Aucun template dans cette catégorie.
         </div>
@@ -40,7 +54,7 @@
       </div>
     </div>
 
-    <!-- Hover preview tooltip (#11) -->
+    <!-- Hover preview tooltip -->
     <Teleport to="body">
       <div v-if="hoveredPreset" class="tpl-hover-preview" :style="hoverStyle">
         <div class="tpl-hover-title">{{ hoveredPreset.icon }} {{ hoveredPreset.name }}</div>
@@ -58,8 +72,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import type { Template } from '../../types/app'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import type { Template, Tutorial } from '../../types/app'
+import api from '../../api/client'
+import { tutorialToEmbed } from '../../utils/tutorialToEmbed'
 
 const props = defineProps<{
   modelValue: boolean
@@ -77,10 +93,26 @@ function loadTemplate(t: Template) {
   emit('update:modelValue', false)
 }
 
+async function loadTutorial(t: Pick<Tutorial, 'id' | 'title' | 'description' | 'published'>) {
+  loadingConvert.value = true
+  try {
+    const { data } = await api.get(`/tutorials/${t.id}`)
+    const full: Tutorial = { ...data, blocks: data.blocks }
+    const embed = tutorialToEmbed(full)
+    emit('load-preset', { embeds: [embed] })
+    emit('update:modelValue', false)
+  } finally {
+    loadingConvert.value = false
+  }
+}
+
 const activeCat = ref('Tous')
 const hoveredPreset = ref<any>(null)
 const mouseX = ref(0)
 const mouseY = ref(0)
+const tutorials = ref<Pick<Tutorial, 'id' | 'title' | 'description' | 'published'>[]>([])
+const loadingTutorials = ref(false)
+const loadingConvert = ref(false)
 
 const hoverStyle = computed(() => ({
   left: `${Math.min(mouseX.value + 16, window.innerWidth - 320)}px`,
@@ -90,6 +122,16 @@ const hoverStyle = computed(() => ({
 function onMouseMove(e: MouseEvent) { mouseX.value = e.clientX; mouseY.value = e.clientY }
 onMounted(() => document.addEventListener('mousemove', onMouseMove))
 onBeforeUnmount(() => document.removeEventListener('mousemove', onMouseMove))
+
+watch(activeCat, async (cat) => {
+  if (cat !== 'Mes tutoriaux' || tutorials.value.length) return
+  loadingTutorials.value = true
+  try {
+    const { data } = await api.get('/tutorials')
+    tutorials.value = data as Pick<Tutorial, 'id' | 'title' | 'description' | 'published'>[]
+  } catch { tutorials.value = [] }
+  finally { loadingTutorials.value = false }
+})
 
 const presetTemplates = [
   { cat: 'Jeux', icon: '🎮', name: 'Annonce de jeu', desc: "Sortie ou mise à jour d'un jeu",
@@ -126,10 +168,10 @@ const presetTemplates = [
     payload: { content: '', embeds: [{ title: '💼 Recrutement — [Poste]', description: 'Nous recrutons de nouveaux membres pour renforcer notre équipe !', color: 0xFEE75C, fields: [{ name: '🎯 Poste recherché', value: '[Modérateur / Admin / Helper]', inline: true }, { name: '👥 Places disponibles', value: '[X] poste(s)', inline: true }, { name: '📋 Prérequis', value: '• Être membre depuis [durée]\n• Disponible [X]h/semaine', inline: false }, { name: '📝 Candidater', value: 'Remplissez le formulaire : [lien]', inline: false }], footer: { text: "Rejoignez l'équipe !" } }] } },
 ]
 
-const allCategories = computed(() => ['Tous', ...new Set(presetTemplates.map(t => t.cat)), 'Mes templates'])
+const allCategories = computed(() => ['Tous', ...new Set(presetTemplates.map(t => t.cat)), 'Mes templates', 'Mes tutoriaux'])
 
 const filteredPresets = computed(() => {
-  if (activeCat.value === 'Mes templates') return []
+  if (activeCat.value === 'Mes templates' || activeCat.value === 'Mes tutoriaux') return []
   if (activeCat.value === 'Tous') return presetTemplates
   return presetTemplates.filter(t => t.cat === activeCat.value)
 })
@@ -137,6 +179,11 @@ const filteredPresets = computed(() => {
 const filteredUserTemplates = computed(() => {
   if (activeCat.value === 'Tous' || activeCat.value === 'Mes templates') return props.userTemplates
   return []
+})
+
+const filteredTutorials = computed<Pick<Tutorial, 'id' | 'title' | 'description' | 'published'>[]>(() => {
+  if (activeCat.value !== 'Mes tutoriaux') return []
+  return tutorials.value
 })
 </script>
 
@@ -149,11 +196,14 @@ const filteredUserTemplates = computed(() => {
 .tpl-card:hover { border-color: var(--accent); background: rgba(88,101,242,.1); transform: translateY(-1px); }
 .tpl-card-icon { font-size: 24px; margin-bottom: 6px; }
 .user-tpl { border-left: 3px solid var(--accent); }
+.tuto-tpl { border-left: 3px solid #57f287; }
+.tpl-card--loading { opacity: 0.6; cursor: wait; }
 .mt-2 { margin-top: 8px; }
 .flex { display: flex; }
 .items-center { align-items: center; }
 .gap-2 { gap: 8px; }
 .mb-1 { margin-bottom: 4px; }
+.badge-warning { background: rgba(254,231,92,.2); color: #fee75c; border: 1px solid rgba(254,231,92,.4); border-radius: 10px; padding: 2px 6px; }
 /* Hover preview */
 .tpl-hover-preview {
   position: fixed; z-index: 9999; width: 300px; pointer-events: none;
