@@ -33,39 +33,96 @@
     <div v-if="showImport" class="modal-overlay" @click.self="showImport = false">
       <div class="modal import-modal">
         <h3>📥 Importer depuis Discord</h3>
-        <p class="import-hint">Colle ici le contenu d'un tutoriel Discord (texte markdown, images, blocs de code…) ou un export JSON DiscordChatExporter.</p>
 
-        <div v-if="importStep === 'paste'" class="section">
-          <label class="fh-label">Titre du tutoriel *</label>
-          <input v-model="importTitle" placeholder="Mon tutoriel importé" class="fh-input" />
-          <label class="fh-label mt-8">Contenu Discord à coller *</label>
-          <textarea v-model="importRaw" placeholder="Colle ici le message Discord complet…" class="fh-textarea import-ta" rows="14" spellcheck="false" />
-          <p v-if="importError" class="error">{{ importError }}</p>
-          <div class="modal-actions">
-            <button @click="analyseImport" class="btn-primary" :disabled="!importRaw.trim()">🔍 Analyser</button>
-            <button @click="showImport = false" class="btn-secondary">Annuler</button>
-          </div>
+        <!-- Onglets mode -->
+        <div class="import-tabs">
+          <button :class="['import-tab', { active: importMode === 'paste' }]" @click="switchMode('paste')">📝 Coller du texte</button>
+          <button :class="['import-tab', { active: importMode === 'bot' }]" @click="switchMode('bot')">🤖 Via Bot Discord</button>
         </div>
 
-        <div v-else-if="importStep === 'preview'" class="section">
-          <div class="import-preview-header">
-            <span class="badge badge-success">{{ importBlocks.length }} bloc{{ importBlocks.length > 1 ? 's' : '' }} détecté{{ importBlocks.length > 1 ? 's' : '' }}</span>
-          </div>
-          <div class="import-blocks-preview">
-            <div v-for="(b, i) in importBlocks" :key="i" class="import-block-row">
-              <span class="iblk-type">{{ blockIcon(b.type) }} {{ b.type }}</span>
-              <span class="iblk-preview">{{ blockPreviewText(b) }}</span>
+        <!-- MODE PASTE -->
+        <template v-if="importMode === 'paste'">
+          <p class="import-hint">Colle ici le contenu d'un tutoriel Discord (texte markdown, images, blocs de code…) ou un export JSON DiscordChatExporter.</p>
+
+          <div v-if="importStep === 'paste'" class="section">
+            <label class="fh-label">Titre du tutoriel *</label>
+            <input v-model="importTitle" placeholder="Mon tutoriel importé" class="fh-input" />
+            <label class="fh-label mt-8">Contenu Discord à coller *</label>
+            <textarea v-model="importRaw" placeholder="Colle ici le message Discord complet…" class="fh-textarea import-ta" rows="14" spellcheck="false" />
+            <p v-if="importError" class="error">{{ importError }}</p>
+            <div class="modal-actions">
+              <button @click="analyseImport" class="btn-primary" :disabled="!importRaw.trim()">🔍 Analyser</button>
+              <button @click="showImport = false" class="btn-secondary">Annuler</button>
             </div>
           </div>
-          <p v-if="importError" class="error">{{ importError }}</p>
-          <div class="modal-actions">
-            <button @click="saveImport" class="btn-primary" :disabled="importing">
-              {{ importing ? '⏳ Sauvegarde…' : '💾 Créer le tutoriel' }}
-            </button>
-            <button @click="importStep = 'paste'" class="btn-secondary">← Corriger</button>
-            <button @click="showImport = false" class="btn-secondary">Annuler</button>
+
+          <div v-else-if="importStep === 'preview'" class="section">
+            <div class="import-preview-header">
+              <span class="badge badge-success">{{ importBlocks.length }} bloc{{ importBlocks.length > 1 ? 's' : '' }} détecté{{ importBlocks.length > 1 ? 's' : '' }}</span>
+            </div>
+            <div class="import-blocks-preview">
+              <div v-for="(b, i) in importBlocks" :key="i" class="import-block-row">
+                <span class="iblk-type">{{ blockIcon(b.type) }} {{ b.type }}</span>
+                <span class="iblk-preview">{{ blockPreviewText(b) }}</span>
+              </div>
+            </div>
+            <p v-if="importError" class="error">{{ importError }}</p>
+            <div class="modal-actions">
+              <button @click="saveImport" class="btn-primary" :disabled="importing">
+                {{ importing ? '⏳ Sauvegarde…' : '💾 Créer le tutoriel' }}
+              </button>
+              <button @click="importStep = 'paste'" class="btn-secondary">← Corriger</button>
+              <button @click="showImport = false" class="btn-secondary">Annuler</button>
+            </div>
           </div>
-        </div>
+        </template>
+
+        <!-- MODE BOT -->
+        <template v-else>
+          <p class="import-hint">Récupère les messages directement depuis un salon Discord via un bot.</p>
+
+          <div v-if="botStep === 1" class="section">
+            <label class="fh-label">Titre du tutoriel *</label>
+            <input v-model="importTitle" placeholder="Mon tutoriel importé" class="fh-input" />
+            <label class="fh-label mt-8">Bot</label>
+            <select v-model="botImportBotId" class="fh-select" @change="botImportChannelId = ''">
+              <option :value="null" disabled>— Choisir un bot —</option>
+              <option v-for="b in botList" :key="b.id" :value="b.id">{{ b.name }}</option>
+            </select>
+            <div v-if="botImportBotId" class="mt-8">
+              <label class="fh-label">Salon / Post de forum</label>
+              <BotChannelPicker :bot-id="botImportBotId" @select="onBotChannelSelect" />
+            </div>
+            <p v-if="importError" class="error mt-8">{{ importError }}</p>
+            <div class="modal-actions">
+              <button @click="fetchBotMessages" class="btn-primary"
+                :disabled="!botImportChannelId || !botImportBotId || botFetching">
+                {{ botFetching ? '⏳ Récupération...' : '🔍 Récupérer les messages' }}
+              </button>
+              <button @click="showImport = false" class="btn-secondary">Annuler</button>
+            </div>
+          </div>
+
+          <div v-else-if="botStep === 2" class="section">
+            <div class="import-preview-header">
+              <span class="badge badge-success">{{ importBlocks.length }} bloc{{ importBlocks.length > 1 ? 's' : '' }} détecté{{ importBlocks.length > 1 ? 's' : '' }}</span>
+            </div>
+            <div class="import-blocks-preview">
+              <div v-for="(b, i) in importBlocks" :key="i" class="import-block-row">
+                <span class="iblk-type">{{ blockIcon(b.type) }} {{ b.type }}</span>
+                <span class="iblk-preview">{{ blockPreviewText(b) }}</span>
+              </div>
+            </div>
+            <p v-if="importError" class="error">{{ importError }}</p>
+            <div class="modal-actions">
+              <button @click="saveImport" class="btn-primary" :disabled="importing">
+                {{ importing ? '⏳ Sauvegarde…' : '💾 Créer le tutoriel' }}
+              </button>
+              <button @click="botStep = 1" class="btn-secondary">← Retour</button>
+              <button @click="showImport = false" class="btn-secondary">Annuler</button>
+            </div>
+          </div>
+        </template>
       </div>
     </div>
   </div>
@@ -76,6 +133,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../api/client'
 import { useUiStore } from '../stores/ui'
+import BotChannelPicker from '../components/bots/BotChannelPicker.vue'
 import type { TutorialBlock } from '../types/app'
 
 const ui = useUiStore()
@@ -84,6 +142,7 @@ const tutorials = ref<any[]>([])
 
 // ─── Import Discord ──────────────────────────────────────────────
 const showImport = ref(false)
+const importMode = ref<'paste' | 'bot'>('paste')
 const importStep = ref<'paste' | 'preview'>('paste')
 const importRaw = ref('')
 const importTitle = ref('')
@@ -91,13 +150,75 @@ const importBlocks = ref<TutorialBlock[]>([])
 const importError = ref('')
 const importing = ref(false)
 
+// Bot import
+const botList = ref<{ id: number; name: string }[]>([])
+const botImportBotId = ref<number | null>(null)
+const botImportChannelId = ref('')
+const botFetching = ref(false)
+const botStep = ref<1 | 2>(1)
+
+function onBotChannelSelect(sel: { channelId: string } | null) {
+  botImportChannelId.value = sel?.channelId ?? ''
+}
+
+function switchMode(mode: 'paste' | 'bot') {
+  importMode.value = mode
+  importError.value = ''
+  importBlocks.value = []
+  importStep.value = 'paste'
+  botStep.value = 1
+}
+
 function openImport() {
   importRaw.value = ''
   importTitle.value = ''
   importBlocks.value = []
   importError.value = ''
   importStep.value = 'paste'
+  botStep.value = 1
+  botImportBotId.value = null
+  botImportChannelId.value = ''
   showImport.value = true
+  if (!botList.value.length) api.get('/bots').then(r => { botList.value = r.data })
+}
+
+async function fetchBotMessages() {
+  if (!botImportBotId.value || !botImportChannelId.value) return
+  botFetching.value = true
+  importError.value = ''
+  try {
+    const { data } = await api.get(`/bots/${botImportBotId.value}/channels/${botImportChannelId.value}/messages`, {
+      params: { limit: 100 },
+    })
+    const msgs: any[] = data
+    if (!msgs.length) { importError.value = 'Aucun message trouvé dans ce canal'; return }
+
+    const blocks: TutorialBlock[] = []
+    for (const m of msgs) {
+      if (m.content?.trim()) {
+        const parsed = parseDiscordMarkdown(m.content.trim())
+        blocks.push(...parsed.blocks)
+      }
+      for (const att of m.attachments ?? []) {
+        const url: string = att.url ?? ''
+        if (/\.(png|jpg|jpeg|gif|webp)$/i.test(url)) {
+          blocks.push(mkBlock('image', { url, caption: att.filename ?? '' }))
+        }
+      }
+      for (const url of m.embed_images ?? []) {
+        if (url) blocks.push(mkBlock('image', { url, caption: '' }))
+      }
+    }
+
+    if (!blocks.length) { importError.value = 'Aucun contenu exploitable trouvé'; return }
+    if (!importTitle.value) importTitle.value = 'Tutoriel importé'
+    importBlocks.value = blocks
+    botStep.value = 2
+  } catch (e: any) {
+    importError.value = e?.response?.data?.detail ?? e?.response?.data?.error ?? 'Erreur de récupération'
+  } finally {
+    botFetching.value = false
+  }
 }
 
 function mkBlock(type: TutorialBlock['type'], content: any): TutorialBlock {
@@ -317,6 +438,10 @@ async function remove(id: number) {
 
 /* Import modal */
 .import-modal { max-width: 680px; width: 100%; }
+.import-tabs { display: flex; gap: 4px; margin-bottom: 14px; background: var(--bg-tertiary); border-radius: 8px; padding: 4px; }
+.import-tab { flex: 1; padding: 7px; border: none; border-radius: 6px; background: transparent; color: var(--text-muted); font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s; }
+.import-tab.active { background: var(--accent); color: #fff; }
+.import-tab:hover:not(.active) { color: #fff; }
 .import-hint { font-size: 12px; color: var(--text-muted); margin-bottom: 14px; line-height: 1.5; }
 .import-ta { min-height: 220px; font-family: 'Consolas', monospace; font-size: 12px; }
 .import-preview-header { margin-bottom: 10px; }
@@ -326,4 +451,5 @@ async function remove(id: number) {
 .iblk-type { color: var(--accent); font-weight: 700; white-space: nowrap; min-width: 100px; }
 .iblk-preview { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .mt-8 { margin-top: 8px; }
+.fh-select { width: 100%; }
 </style>

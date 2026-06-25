@@ -112,7 +112,7 @@
             <div class="step-fields">
               <input v-model="embed.title" placeholder="Titre de l'étape (ex: Installation)" class="fh-input" maxlength="256" />
               <textarea v-model="embed.description" placeholder="Explication détaillée de cette étape..."
-                class="fh-textarea" rows="3" maxlength="4096" />
+                class="fh-textarea" rows="3" />
 
               <!-- Bloc code inline -->
               <div v-if="stepShowCode[i]" class="step-code-editor">
@@ -271,11 +271,12 @@
         <div class="legend-item"><span class="leg-tag tag-embed">3</span> Embed (carte)</div>
       </div>
 
-      <DiscordPreview :message="embedStore.message" :show-bot-tag="true" />
-
-      <div v-if="showJson" class="mt-4">
-        <label class="fh-label">Payload JSON</label>
-        <pre class="json-block">{{ JSON.stringify(embedStore.message, null, 2) }}</pre>
+      <div class="preview-scroll-area">
+        <DiscordPreview :message="embedStore.message" :show-bot-tag="true" />
+        <div v-if="showJson" class="mt-4">
+          <label class="fh-label">Payload JSON</label>
+          <pre class="json-block">{{ JSON.stringify(embedStore.message, null, 2) }}</pre>
+        </div>
       </div>
     </div>
 
@@ -696,7 +697,7 @@ function applyDiscordImport() {
   // Remplace les embeds par les étapes importées
   embedStore.message.embeds = diSteps.value.map(s => ({
     ...emptyEmbed(),
-    description: s.text.slice(0, 4096),
+    description: s.text,
     image: { url: s.imageUrl },
   }))
   stepMode.value = true
@@ -775,6 +776,7 @@ async function uploadAvatar(e: Event) {
 </script>
 
 <style scoped>
+.preview-scroll-area { flex: 1; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
 .inline-toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .editor-section { border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 16px; }
 .section-title { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }

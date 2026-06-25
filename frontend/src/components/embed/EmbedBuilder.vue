@@ -24,13 +24,14 @@
     </div>
 
     <div class="section">
-      <label class="fh-label">Description</label>
-      <textarea v-model="embed.description"
-        placeholder="Description — **gras**, *italique*, `code`, [lien](url), ~~barré~~"
-        class="fh-textarea" rows="5" />
-      <div class="char-count" :class="{ warn: (embed.description?.length ?? 0) > 3800 }">
-        {{ embed.description?.length ?? 0 }}/4096
+      <div class="desc-label-row">
+        <label class="fh-label">Description</label>
+        <EmojiPicker @select="insertEmoji" />
       </div>
+      <textarea ref="descTextarea" v-model="embed.description"
+        placeholder="Description — **gras**, *italique*, `code`, [lien](url), ~~barré~~"
+        class="fh-textarea desc-textarea" rows="8" />
+      <div class="char-count">{{ embed.description?.length ?? 0 }} caractères</div>
     </div>
 
     <div class="section row">
@@ -83,13 +84,29 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import EmbedColorPicker from './EmbedColorPicker.vue'
 import EmbedFieldEditor from './EmbedFieldEditor.vue'
+import EmojiPicker from '../shared/EmojiPicker.vue'
 import type { DiscordEmbed } from '../../types/discord'
 import api from '../../api/client'
 
 const embed = defineModel<Partial<DiscordEmbed>>({ required: true })
+const descTextarea = ref<HTMLTextAreaElement | null>(null)
+
+function insertEmoji(emoji: string) {
+  const el = descTextarea.value
+  const cur = embed.value.description ?? ''
+  const start = el?.selectionStart ?? cur.length
+  const end = el?.selectionEnd ?? cur.length
+  embed.value.description = cur.slice(0, start) + emoji + cur.slice(end)
+  nextTick(() => {
+    if (el) {
+      el.setSelectionRange(start + emoji.length, start + emoji.length)
+      el.focus()
+    }
+  })
+}
 
 const authorName = computed({
   get: () => embed.value.author?.name ?? '',
@@ -171,8 +188,10 @@ async function handleUpload(e: Event) {
 
 <style scoped>
 .embed-builder { display: flex; flex-direction: column; gap: 4px; }
+.desc-label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.desc-label-row .fh-label { margin-bottom: 0; }
+.desc-textarea { min-height: 140px; }
 .char-count { font-size: 11px; color: #72767d; text-align: right; margin-top: 2px; }
-.char-count.warn { color: #fee75c; }
 .row { display: flex; gap: 12px; }
 .half { flex: 1; min-width: 0; }
 .mt-1 { margin-top: 4px; }

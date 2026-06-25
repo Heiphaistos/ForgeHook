@@ -192,7 +192,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-height: 0;
 }
+.preview-panel { overflow-y: hidden; }
 .panel-header {
   display: flex;
   justify-content: space-between;
@@ -200,11 +202,6 @@ body {
   margin-bottom: 12px;
   flex-wrap: wrap;
   gap: 8px;
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: var(--bg-secondary);
-  padding-bottom: 8px;
 }
 .panel-header h2 { font-size: 17px; font-weight: 700; color: #fff; }
 .panel-header .actions { display: flex; gap: 8px; flex-wrap: wrap; }

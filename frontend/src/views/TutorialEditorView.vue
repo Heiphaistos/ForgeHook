@@ -39,9 +39,14 @@
 
         <!-- Text block -->
         <div v-if="block.type === 'text'" class="block-content">
-          <textarea v-model="block.content"
-            placeholder="Texte — **gras**, *italique*, `code`, [lien](url), ~~barré~~"
-            class="fh-textarea block-textarea" rows="5" />
+          <div class="block-textarea-row">
+            <textarea
+              :ref="(el) => { if (el) blockTextareaRefs.set(block.id, el as HTMLTextAreaElement) }"
+              v-model="block.content"
+              placeholder="Texte — **gras**, *italique*, `code`, [lien](url), ~~barré~~"
+              class="fh-textarea block-textarea" rows="5" />
+            <EmojiPicker @select="(e) => insertBlockEmoji(block.id, 'content', e)" />
+          </div>
         </div>
 
         <!-- Image block -->
@@ -98,7 +103,12 @@
             <option value="success">✅ Succès</option>
             <option value="danger">❌ Danger</option>
           </select>
-          <textarea v-model="block.content.text" placeholder="Contenu du callout..." class="fh-textarea" rows="3" />
+          <div class="block-textarea-row">
+            <textarea
+              :ref="(el) => { if (el) blockCalloutRefs.set(block.id, el as HTMLTextAreaElement) }"
+              v-model="block.content.text" placeholder="Contenu du callout..." class="fh-textarea" rows="3" />
+            <EmojiPicker @select="(e) => insertBlockEmoji(block.id, 'callout', e)" />
+          </div>
         </div>
       </div>
 
@@ -299,11 +309,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed, onMounted } from 'vue'
+import { ref, watch, computed, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import EmbedBuilder from '../components/embed/EmbedBuilder.vue'
 import EmbedPreview from '../components/preview/EmbedPreview.vue'
 import BotChannelPicker from '../components/bots/BotChannelPicker.vue'
+import EmojiPicker from '../components/shared/EmojiPicker.vue'
 import api from '../api/client'
 import { emptyEmbed } from '../types/discord'
 import type { Tutorial, TutorialBlock, Webhook } from '../types/app'
@@ -317,6 +328,27 @@ const imageFileInput = ref<HTMLInputElement | null>(null)
 const uploadingIdx = ref<number | null>(null)
 let uploadTargetIdx = -1
 const showTplModal = ref(false)
+
+const blockTextareaRefs = ref(new Map<string, HTMLTextAreaElement>())
+const blockCalloutRefs = ref(new Map<string, HTMLTextAreaElement>())
+
+function insertBlockEmoji(blockId: string, field: 'content' | 'callout', emoji: string) {
+  const block = tutorial.value.blocks.find(b => b.id === blockId)
+  if (!block) return
+  const el = field === 'content' ? blockTextareaRefs.value.get(blockId) : blockCalloutRefs.value.get(blockId)
+  const cur = field === 'content' ? (block.content as string ?? '') : (block.content?.text ?? '')
+  const start = el?.selectionStart ?? cur.length
+  const end = el?.selectionEnd ?? cur.length
+  const newVal = cur.slice(0, start) + emoji + cur.slice(end)
+  if (field === 'content') block.content = newVal
+  else block.content.text = newVal
+  nextTick(() => {
+    if (el) {
+      el.setSelectionRange(start + emoji.length, start + emoji.length)
+      el.focus()
+    }
+  })
+}
 
 const tutorial = ref<Tutorial>({ id: 0, title: '', description: '', blocks: [], published: 0 })
 
@@ -832,6 +864,9 @@ function youtubeEmbed(url: string): string {
 .ctrl-btn.danger:hover { color: var(--danger); border-color: var(--danger); }
 .ctrl-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 .block-content { padding: 14px; }
+.block-textarea-row { display: flex; gap: 6px; align-items: flex-start; }
+.block-textarea-row .fh-textarea { flex: 1; }
+.block-textarea-row .emoji-picker-wrapper { flex-shrink: 0; margin-top: 0; }
 .block-textarea { min-height: 100px; }
 .code-ta { font-family: 'Consolas', monospace; font-size: 13px; }
 .img-upload-row { display: flex; gap: 6px; align-items: center; }

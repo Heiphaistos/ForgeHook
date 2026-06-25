@@ -19,6 +19,7 @@ const router = createRouter({
     { path: '/templates', component: () => import('../views/TemplatesView.vue'), meta: { requiresAuth: true } },
     { path: '/fonts', component: () => import('../views/DiscordFontsView.vue'), meta: { requiresAuth: true } },
     { path: '/media', component: () => import('../views/MediaManagerView.vue'), meta: { requiresAuth: true } },
+    { path: '/emojis', component: () => import('../views/EmojisView.vue'), meta: { requiresAuth: true } },
   ],
 })
 
