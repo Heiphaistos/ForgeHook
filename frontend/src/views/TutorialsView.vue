@@ -8,24 +8,45 @@
       </div>
     </div>
 
+    <!-- Barre recherche + filtres (#14, #12) -->
+    <div class="tut-filters">
+      <input v-model="searchQ" placeholder="🔍 Rechercher dans les tutoriaux..." class="fh-input filter-search" />
+      <select v-model="filterCat" class="fh-select" style="min-width:140px">
+        <option value="">Toutes catégories</option>
+        <option v-for="c in allCategories" :key="c" :value="c">{{ c }}</option>
+      </select>
+      <select v-model="filterStatus" class="fh-select" style="min-width:130px">
+        <option value="">Tous statuts</option>
+        <option value="published">🌐 Publiés</option>
+        <option value="draft">📝 Brouillons</option>
+      </select>
+      <button v-if="searchQ || filterCat || filterStatus" @click="searchQ='';filterCat='';filterStatus=''" class="btn-secondary">✕</button>
+    </div>
+
     <div class="grid-2">
-      <div v-for="t in tutorials" :key="t.id" class="card tutorial-card">
+      <div v-for="t in filteredTutorials" :key="t.id" class="card tutorial-card">
         <div class="tut-header">
           <span :class="['badge', t.published ? 'badge-success' : 'badge-info']">
             {{ t.published ? '🌐 Publié' : '📝 Brouillon' }}
           </span>
+          <span v-if="t.category" class="badge badge-info tut-cat-badge">{{ t.category }}</span>
           <div class="tut-date">{{ fmtDate(t.created_at ?? '') }}</div>
         </div>
         <h3 class="tut-title">{{ t.title }}</h3>
         <p v-if="t.description" class="tut-desc">{{ t.description }}</p>
+        <div v-if="t.tags" class="tut-tags">
+          <span v-for="tag in parseTags(t.tags)" :key="tag" class="tut-tag">{{ tag }}</span>
+        </div>
         <div class="tut-blocks">{{ blockCount(t) }}</div>
         <div class="tut-actions">
           <router-link :to="`/tutorials/${t.id}`" class="btn-primary" style="font-size:12px;padding:5px 12px">✏️ Éditer</router-link>
+          <button @click="duplicate(t)" class="btn-secondary" style="font-size:12px;padding:5px 10px" title="Dupliquer">⧉</button>
+          <button @click="exportMarkdown(t)" class="btn-secondary" style="font-size:12px;padding:5px 10px" title="Exporter en Markdown">📄</button>
           <button @click="remove(t.id)" class="btn-danger-sm">🗑</button>
         </div>
       </div>
-      <div v-if="!tutorials.length" class="empty-state">
-        Aucun tutoriel. Créez-en un avec l'éditeur de blocs.
+      <div v-if="!filteredTutorials.length" class="empty-state">
+        {{ searchQ || filterCat || filterStatus ? 'Aucun résultat.' : 'Aucun tutoriel. Créez-en un avec l\'éditeur de blocs.' }}
       </div>
     </div>
 
@@ -129,7 +150,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../api/client'
 import { useUiStore } from '../stores/ui'
@@ -403,6 +424,96 @@ function blockPreviewText(b: TutorialBlock): string {
   return ''
 }
 
+// ─── Search & filters (#12, #14) ─────────────────────────────────
+const searchQ = ref('')
+const filterCat = ref('')
+const filterStatus = ref('')
+
+const allCategories = computed(() => {
+  const cats = new Set<string>()
+  tutorials.value.forEach(t => { if (t.category) cats.add(t.category) })
+  return [...cats].sort()
+})
+
+function parseTags(tags: string | null | undefined): string[] {
+  if (!tags) return []
+  return tags.split(',').map((t: string) => t.trim()).filter(Boolean)
+}
+
+const filteredTutorials = computed(() => {
+  let list = tutorials.value
+  if (filterCat.value) list = list.filter((t: any) => t.category === filterCat.value)
+  if (filterStatus.value === 'published') list = list.filter((t: any) => t.published)
+  if (filterStatus.value === 'draft') list = list.filter((t: any) => !t.published)
+  if (searchQ.value) {
+    const q = searchQ.value.toLowerCase()
+    list = list.filter((t: any) => {
+      if (t.title?.toLowerCase().includes(q)) return true
+      if (t.description?.toLowerCase().includes(q)) return true
+      if (Array.isArray(t.blocks)) {
+        return t.blocks.some((b: any) => {
+          const c = b.content
+          if (typeof c === 'string') return c.toLowerCase().includes(q)
+          if (typeof c === 'object' && c !== null) {
+            return Object.values(c).some(v => typeof v === 'string' && v.toLowerCase().includes(q))
+          }
+          return false
+        })
+      }
+      return false
+    })
+  }
+  return list
+})
+
+// Export Markdown (#13)
+function exportMarkdown(t: any) {
+  const lines: string[] = [`# ${t.title}`, '']
+  if (t.description) lines.push(t.description, '')
+  const blocks = Array.isArray(t.blocks) ? t.blocks : (typeof t.blocks === 'string' ? JSON.parse(t.blocks) : [])
+  for (const b of blocks) {
+    if (b.type === 'text') { lines.push(b.content ?? '', '') }
+    else if (b.type === 'code') {
+      lines.push('```' + (b.content?.language ?? ''), b.content?.code ?? '', '```', '')
+    }
+    else if (b.type === 'image') {
+      lines.push(`![${b.content?.caption ?? ''}](${b.content?.url ?? ''})`, '')
+    }
+    else if (b.type === 'video') {
+      lines.push(`[Vidéo](${b.content?.url ?? ''})`, '')
+    }
+    else if (b.type === 'callout') {
+      lines.push(`> **[${b.content?.type?.toUpperCase() ?? 'INFO'}]** ${b.content?.text ?? ''}`, '')
+    }
+    else if (b.type === 'separator') { lines.push('---', '') }
+  }
+  const content = lines.join('\n')
+  const blob = new Blob([content], { type: 'text/markdown; charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${t.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.md`
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+// Duplication rapide (#18)
+async function duplicate(t: any) {
+  const blocks = Array.isArray(t.blocks) ? t.blocks : (typeof t.blocks === 'string' ? JSON.parse(t.blocks) : [])
+  const { data } = await api.post('/tutorials', {
+    title: `${t.title} (copie)`,
+    description: t.description ?? '',
+    blocks,
+    published: false,
+    category: t.category ?? '',
+    tags: t.tags ?? '',
+  })
+  const { data: list } = await api.get('/tutorials')
+  tutorials.value = list
+  ui.notify(`"${t.title}" dupliqué ✅`)
+  router.push(`/tutorials/${data.id}`)
+}
+
 // ─── Liste ───────────────────────────────────────────────────────
 onMounted(async () => {
   const { data } = await api.get('/tutorials')
@@ -452,4 +563,11 @@ async function remove(id: number) {
 .iblk-preview { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .mt-8 { margin-top: 8px; }
 .fh-select { width: 100%; }
+/* Filters bar */
+.tut-filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+.filter-search { flex: 1; min-width: 200px; }
+/* Tags */
+.tut-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; }
+.tut-tag { font-size: 10px; padding: 1px 7px; background: rgba(88,101,242,.15); color: var(--accent); border-radius: 10px; }
+.tut-cat-badge { font-size: 10px; margin-left: 4px; }
 </style>

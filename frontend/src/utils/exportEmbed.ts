@@ -102,6 +102,17 @@ export function exportCurl(msg: DiscordMessage, webhookUrl: string): string {
   return `curl -X POST '${webhookUrl}' \\\n  -H 'Content-Type: application/json' \\\n  -d '${json}'`
 }
 
+export function exportPowerShell(msg: DiscordMessage, webhookUrl: string): string {
+  const payload = {
+    content: msg.content || undefined,
+    username: msg.username || undefined,
+    avatar_url: msg.avatar_url || undefined,
+    embeds: msg.embeds.length ? msg.embeds : undefined,
+  }
+  const json = JSON.stringify(payload, null, 2).replace(/"/g, '`"')
+  return `$payload = @"\n${json}\n"@\n\nInvoke-RestMethod \`\n  -Uri "${webhookUrl}" \`\n  -Method POST \`\n  -ContentType "application/json" \`\n  -Body $payload`
+}
+
 export function downloadFile(content: string, filename: string, mime: string): void {
   const blob = new Blob([content], { type: `${mime}; charset=utf-8` })
   const url = URL.createObjectURL(blob)

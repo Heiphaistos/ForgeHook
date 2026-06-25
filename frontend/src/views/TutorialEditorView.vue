@@ -25,9 +25,17 @@
 
     <!-- Éditeur de blocs -->
     <div v-if="!previewMode" class="blocks-area">
-      <div v-for="(block, i) in tutorial.blocks" :key="block.id" class="block-wrapper">
+      <div v-for="(block, i) in tutorial.blocks" :key="block.id"
+        class="block-wrapper"
+        :class="{ 'block-dragging': dragBlockIdx === i, 'block-dragover': dropBlockIdx === i }"
+        draggable="true"
+        @dragstart.self="dragBlockIdx = i"
+        @dragend="dragBlockIdx = -1; dropBlockIdx = -1"
+        @dragover.prevent="dropBlockIdx = i"
+        @dragleave.self="dropBlockIdx = -1"
+        @drop.prevent="dropBlock(i)">
         <div class="block-controls">
-          <span class="drag-handle" title="Déplacer">⠿</span>
+          <span class="drag-handle" title="Glisser pour réordonner">⠿</span>
           <span class="block-type-label">{{ blockLabel(block.type) }}</span>
           <div class="block-btns">
             <button @click="duplicate(i)" title="Dupliquer" class="ctrl-btn">⧉</button>
@@ -799,6 +807,19 @@ function duplicate(i: number) {
   tutorial.value.blocks.splice(i + 1, 0, copy)
 }
 
+// Drag & drop blocs (#6)
+const dragBlockIdx = ref(-1)
+const dropBlockIdx = ref(-1)
+
+function dropBlock(targetIdx: number) {
+  if (dragBlockIdx.value === -1 || dragBlockIdx.value === targetIdx) return
+  const blocks = tutorial.value.blocks
+  const [moved] = blocks.splice(dragBlockIdx.value, 1)
+  blocks.splice(targetIdx, 0, moved)
+  dragBlockIdx.value = -1
+  dropBlockIdx.value = -1
+}
+
 async function save() {
   if (!tutorial.value.title.trim()) { saveMsg.value = '⚠️ Titre requis'; setTimeout(() => saveMsg.value = '', 3000); return }
   saving.value = true
@@ -854,7 +875,9 @@ function youtubeEmbed(url: string): string {
 .publish-toggle input { accent-color: #57f287; }
 
 .blocks-area { flex: 1; overflow-y: auto; padding-bottom: 24px; }
-.block-wrapper { background: var(--bg-secondary); border-radius: 8px; margin-bottom: 10px; border: 1px solid var(--border); overflow: hidden; }
+.block-wrapper { background: var(--bg-secondary); border-radius: 8px; margin-bottom: 10px; border: 1px solid var(--border); overflow: hidden; cursor: default; }
+.block-dragging { opacity: 0.4; }
+.block-dragover { border-color: var(--accent); background: rgba(88,101,242,.08); }
 .block-controls { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--bg-tertiary); border-bottom: 1px solid var(--border); }
 .drag-handle { cursor: grab; font-size: 16px; color: var(--text-muted); user-select: none; }
 .block-type-label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--accent); letter-spacing: 0.5px; flex: 1; }

@@ -5,12 +5,19 @@
       <div class="panel-header">
         <h2>⚡ Constructeur d'embed</h2>
         <div class="actions">
-          <button @click="openDiscordImport" class="btn-secondary" title="Importer depuis Discord via bot">📥 Import Discord</button>
+          <button @click="embedStore.undo()" class="btn-secondary" :disabled="!embedStore.undoStack.length" title="Annuler (Ctrl+Z)">↩</button>
+          <button @click="embedStore.redo()" class="btn-secondary" :disabled="!embedStore.redoStack.length" title="Rétablir (Ctrl+Y)">↪</button>
+          <button @click="openDiscordImport" class="btn-secondary" title="Importer depuis Discord via bot">📥 Discord</button>
+          <button @click="showJsonImport = true" class="btn-secondary" title="Importer un payload JSON">📋 JSON</button>
           <button @click="showExport = true" class="btn-secondary" title="Exporter l'embed">📤 Export</button>
-          <button @click="showFonts = true" class="btn-secondary" title="Convertisseur de polices">🔤 Fonts</button>
-          <button @click="showTemplates = true" class="btn-secondary" title="Charger un template">📋 Templates</button>
+          <button @click="showFonts = true" class="btn-secondary" title="Convertisseur de polices">🔤</button>
+          <button @click="showTemplates = true" class="btn-secondary" title="Charger un template">📋</button>
           <button @click="saveAsTemplate" class="btn-secondary" title="Sauver comme template">💾</button>
+          <button @click="showVarsInfo = true" class="btn-secondary" title="Variables dynamiques">🔄</button>
         </div>
+      </div>
+      <div v-if="draftRestored" class="draft-banner">
+        📝 Brouillon restauré — <button @click="embedStore.reset(); draftRestored = false" style="background:none;border:none;color:inherit;cursor:pointer;font-size:12px;text-decoration:underline">Effacer</button>
       </div>
 
       <!-- SECTION 1 : Message de base -->
@@ -187,17 +194,34 @@
         </div>
 
         <!-- Mode Webhook -->
-        <div v-if="sendMode === 'webhook'" class="send-area">
-          <select v-model="embedStore.selectedWebhookId" class="fh-select">
-            <option :value="null" disabled>Choisir un webhook</option>
-            <option v-for="w in webhookStore.webhooks" :key="w.id" :value="w.id">{{ w.name }}</option>
-          </select>
-          <input v-model="threadId" placeholder="Thread ID (optionnel)" class="fh-input" style="width:160px" />
-          <button @click="sendWebhook" class="btn-primary send-btn"
-            :disabled="embedStore.sending || !embedStore.selectedWebhookId">
-            {{ embedStore.sending ? '⏳ Envoi...' : isEditMode ? '✏️ Mettre à jour' : '🚀 Envoyer' }}
-          </button>
-          <button @click="embedStore.reset()" class="btn-secondary">🗑</button>
+        <div v-if="sendMode === 'webhook'" class="send-area" style="flex-direction:column;gap:8px">
+          <div style="display:flex;gap:8px;align-items:center">
+            <select v-model="embedStore.selectedWebhookId" class="fh-select" style="flex:1">
+              <option :value="null" disabled>Choisir un webhook principal</option>
+              <option v-for="w in webhookStore.webhooks" :key="w.id" :value="w.id">{{ w.name }}</option>
+            </select>
+            <input v-model="threadId" placeholder="Thread ID (opt.)" class="fh-input" style="width:130px" />
+          </div>
+          <!-- Multi-webhook -->
+          <div class="multi-wh-row">
+            <label class="fh-label" style="margin-bottom:4px">
+              Envoyer aussi vers :
+              <span class="field-hint">Sélectionner plusieurs webhooks supplémentaires</span>
+            </label>
+            <div class="multi-wh-checks">
+              <label v-for="w in webhookStore.webhooks.filter(w => w.id !== embedStore.selectedWebhookId)" :key="w.id" class="multi-wh-check">
+                <input type="checkbox" :value="w.id" v-model="multiWebhookIds" style="accent-color:var(--accent)" />
+                {{ w.name }}
+              </label>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button @click="sendWebhook" class="btn-primary send-btn"
+              :disabled="embedStore.sending || !embedStore.selectedWebhookId">
+              {{ embedStore.sending ? '⏳ Envoi...' : isEditMode ? '✏️ Mettre à jour' : (multiWebhookIds.length ? `🚀 Envoyer (${1 + multiWebhookIds.length})` : '🚀 Envoyer') }}
+            </button>
+            <button @click="embedStore.reset()" class="btn-secondary">🗑</button>
+          </div>
         </div>
 
         <!-- Mode Bot -->
@@ -259,7 +283,15 @@
     <div class="preview-panel">
       <div class="panel-header">
         <h2>👁 Aperçu Discord</h2>
-        <div style="display:flex;gap:8px">
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <button @click="previewLight = !previewLight" class="btn-secondary" style="font-size:12px"
+            :title="previewLight ? 'Passer en sombre' : 'Passer en clair'">
+            {{ previewLight ? '🌙 Sombre' : '☀️ Clair' }}
+          </button>
+          <button @click="previewMobile = !previewMobile" class="btn-secondary" style="font-size:12px"
+            :title="previewMobile ? 'Vue bureau' : 'Vue mobile'">
+            {{ previewMobile ? '🖥 Bureau' : '📱 Mobile' }}
+          </button>
           <button @click="showJson = !showJson" class="btn-secondary" style="font-size:12px">
             {{ showJson ? 'Masquer JSON' : 'JSON' }}
           </button>
@@ -271,7 +303,7 @@
         <div class="legend-item"><span class="leg-tag tag-embed">3</span> Embed (carte)</div>
       </div>
 
-      <div class="preview-scroll-area">
+      <div class="preview-scroll-area" :class="{ 'preview-mobile': previewMobile, 'preview-light-mode': previewLight }">
         <DiscordPreview :message="embedStore.message" :show-bot-tag="true" />
         <div v-if="showJson" class="mt-4">
           <label class="fh-label">Payload JSON</label>
@@ -364,6 +396,44 @@
       :webhook-url="currentWebhookUrl"
     />
 
+    <!-- Modal Import JSON -->
+    <div v-if="showJsonImport" class="modal-overlay" @click.self="showJsonImport = false">
+      <div class="modal" style="max-width:580px">
+        <h3>📋 Importer un payload JSON</h3>
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px">
+          Collez ici un payload Discord JSON (format webhook ou embed direct).
+        </p>
+        <textarea v-model="jsonImportRaw" class="fh-textarea" rows="10"
+          placeholder='{"content":"","embeds":[{"title":"..."}]}' spellcheck="false" />
+        <p v-if="jsonImportError" class="error mt-2">⚠️ {{ jsonImportError }}</p>
+        <div class="modal-actions">
+          <button @click="applyJsonImport" class="btn-primary">✅ Importer</button>
+          <button @click="showJsonImport = false" class="btn-secondary">Annuler</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Variables dynamiques info -->
+    <div v-if="showVarsInfo" class="modal-overlay" @click.self="showVarsInfo = false">
+      <div class="modal" style="max-width:500px">
+        <h3>🔄 Variables dynamiques</h3>
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+          Ces variables sont automatiquement remplacées lors de l'envoi :
+        </p>
+        <div class="vars-table">
+          <div v-for="v in dynamicVars" :key="v.var" class="var-row">
+            <code class="var-code" @click="copyVar(v.var)">{{ v.var }}</code>
+            <span class="var-desc">{{ v.desc }}</span>
+            <span class="var-example">{{ v.example }}</span>
+          </div>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin-top:10px">Cliquer sur une variable pour la copier.</p>
+        <div class="modal-actions">
+          <button @click="showVarsInfo = false" class="btn-secondary">Fermer</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Modal save template -->
     <div v-if="showSaveTemplate" class="modal-overlay" @click.self="showSaveTemplate = false">
       <div class="modal">
@@ -397,7 +467,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import EmbedBuilder from '../components/embed/EmbedBuilder.vue'
 import DiscordPreview from '../components/preview/DiscordPreview.vue'
@@ -460,6 +530,59 @@ const tplForm = ref({ name: '', description: '', category: 'Annonces' })
 const tplNameError = ref(false)
 const avatarInput = ref<HTMLInputElement | null>(null)
 
+// Preview modes (#17 light, #25 mobile)
+const previewLight = ref(false)
+const previewMobile = ref(false)
+
+// Draft banner
+const draftRestored = ref(false)
+
+// Multi-webhook (#9)
+const multiWebhookIds = ref<number[]>([])
+
+// JSON import (#7)
+const showJsonImport = ref(false)
+const jsonImportRaw = ref('')
+const jsonImportError = ref('')
+
+// Variables dynamiques (#22)
+const showVarsInfo = ref(false)
+const dynamicVars = [
+  { var: '{{date}}', desc: 'Date du jour', example: new Date().toLocaleDateString('fr-FR') },
+  { var: '{{time}}', desc: 'Heure actuelle', example: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) },
+  { var: '{{datetime}}', desc: 'Date + heure', example: new Date().toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) },
+  { var: '{{week_number}}', desc: 'Numéro de semaine', example: `Semaine ${getWeekNumber(new Date())}` },
+  { var: '{{day}}', desc: 'Jour de la semaine', example: new Date().toLocaleDateString('fr-FR', { weekday: 'long' }) },
+  { var: '{{month}}', desc: 'Mois en cours', example: new Date().toLocaleDateString('fr-FR', { month: 'long' }) },
+  { var: '{{year}}', desc: 'Année', example: String(new Date().getFullYear()) },
+  { var: '{{timestamp}}', desc: 'Timestamp Unix', example: String(Math.floor(Date.now() / 1000)) },
+]
+
+function getWeekNumber(d: Date): number {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
+  date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7))
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1))
+  return Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
+}
+
+function resolveDynamicVars(str: string): string {
+  const now = new Date()
+  return str
+    .replace(/\{\{date\}\}/g, now.toLocaleDateString('fr-FR'))
+    .replace(/\{\{time\}\}/g, now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }))
+    .replace(/\{\{datetime\}\}/g, now.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }))
+    .replace(/\{\{week_number\}\}/g, String(getWeekNumber(now)))
+    .replace(/\{\{day\}\}/g, now.toLocaleDateString('fr-FR', { weekday: 'long' }))
+    .replace(/\{\{month\}\}/g, now.toLocaleDateString('fr-FR', { month: 'long' }))
+    .replace(/\{\{year\}\}/g, String(now.getFullYear()))
+    .replace(/\{\{timestamp\}\}/g, String(Math.floor(Date.now() / 1000)))
+}
+
+function copyVar(v: string) {
+  navigator.clipboard.writeText(v).catch(() => {})
+  ui.notify(`${v} copié !`)
+}
+
 // Bot send
 const bots = ref<{ id: number; name: string }[]>([])
 const selectedBotId = ref<number | null>(null)
@@ -473,13 +596,48 @@ const currentWebhookUrl = computed(() => {
   return (wh as any)?.url ?? ''
 })
 
+function onKeyDown(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); embedStore.undo() }
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); embedStore.redo() }
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); embedStore.saveDraftNow(); ui.notify('Brouillon sauvegardé') }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); if (embedStore.selectedWebhookId) sendWebhook() }
+}
+
 onMounted(async () => {
   await webhookStore.load()
   const [tplRes, botRes] = await Promise.all([api.get('/templates'), api.get('/bots')])
   templates.value = tplRes.data
   bots.value = botRes.data
-  if (embedStore.message.embeds.length === 0) embedStore.addEmbed()
+  if (embedStore.message.embeds.length === 0) {
+    const restored = embedStore.loadDraft()
+    if (restored) draftRestored.value = true
+    if (embedStore.message.embeds.length === 0) embedStore.addEmbed()
+  }
+  embedStore.startAutosave()
+  document.addEventListener('keydown', onKeyDown)
 })
+
+onBeforeUnmount(() => {
+  embedStore.stopAutosave()
+  document.removeEventListener('keydown', onKeyDown)
+})
+
+function applyVarsToMessage(msg: any): any {
+  const resolve = (s: string) => typeof s === 'string' ? resolveDynamicVars(s) : s
+  const m = JSON.parse(JSON.stringify(msg))
+  if (m.content) m.content = resolve(m.content)
+  if (m.embeds) {
+    m.embeds = m.embeds.map((e: any) => {
+      if (e.title) e.title = resolve(e.title)
+      if (e.description) e.description = resolve(e.description)
+      if (e.footer?.text) e.footer.text = resolve(e.footer.text)
+      if (e.author?.name) e.author.name = resolve(e.author.name)
+      if (e.fields) e.fields = e.fields.map((f: any) => ({ ...f, name: resolve(f.name), value: resolve(f.value) }))
+      return e
+    })
+  }
+  return m
+}
 
 async function sendWebhook() {
   if (isEditMode.value && editWebhookId.value && editMessageId.value) {
@@ -498,8 +656,21 @@ async function sendWebhook() {
   }
   await embedStore.send(threadId.value || undefined)
   if (!embedStore.lastError) {
+    // Multi-webhook supplémentaires
+    if (multiWebhookIds.value.length) {
+      const payload = applyVarsToMessage({
+        content: embedStore.message.content || undefined,
+        username: embedStore.message.username || undefined,
+        avatar_url: embedStore.message.avatar_url || undefined,
+        embeds: embedStore.message.embeds.length ? embedStore.message.embeds : undefined,
+      })
+      await Promise.allSettled(multiWebhookIds.value.map(wid =>
+        api.post('/discord/send', { webhook_id: wid, payload, thread_id: threadId.value || undefined })
+      ))
+    }
     sent.value = true
-    ui.notify('Message envoyé !')
+    const total = 1 + multiWebhookIds.value.length
+    ui.notify(total > 1 ? `Message envoyé sur ${total} webhooks !` : 'Message envoyé !')
     setTimeout(() => { router.push('/history') }, 2000)
   }
 }
@@ -756,6 +927,26 @@ async function createSchedule() {
   }
 }
 
+function applyJsonImport() {
+  jsonImportError.value = ''
+  try {
+    const parsed = JSON.parse(jsonImportRaw.value)
+    if (typeof parsed !== 'object' || parsed === null) throw new Error('JSON invalide')
+    if (parsed.embeds !== undefined || parsed.content !== undefined) {
+      embedStore.loadTemplate(parsed)
+    } else if (parsed.title !== undefined || parsed.description !== undefined) {
+      embedStore.loadTemplate({ content: '', embeds: [parsed] })
+    } else {
+      throw new Error('Format non reconnu. Attendu: payload webhook ou embed Discord.')
+    }
+    showJsonImport.value = false
+    jsonImportRaw.value = ''
+    ui.notify('Payload JSON importé ✅')
+  } catch (e: any) {
+    jsonImportError.value = e.message ?? 'JSON invalide'
+  }
+}
+
 function triggerAvatarUpload() { avatarInput.value?.click() }
 
 async function uploadAvatar(e: Event) {
@@ -849,4 +1040,28 @@ async function uploadAvatar(e: Event) {
 /* Edit mode */
 .edit-mode-badge { font-size: 10px; background: rgba(250,166,26,.2); color: #faa61a; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
 .edit-mode-banner { background: rgba(250,166,26,.1); border: 1px solid rgba(250,166,26,.3); border-radius: 6px; padding: 10px 14px; font-size: 13px; color: #faa61a; margin-bottom: 10px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+/* Draft banner */
+.draft-banner { background: rgba(88,101,242,.1); border: 1px solid rgba(88,101,242,.3); border-radius: 6px; padding: 6px 12px; font-size: 12px; color: #7289da; margin-bottom: 8px; }
+/* Multi-webhook */
+.multi-wh-row { background: var(--bg-tertiary); border-radius: 6px; padding: 8px 10px; }
+.multi-wh-checks { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.multi-wh-check { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-muted); cursor: pointer; }
+.multi-wh-check:hover { color: var(--text); }
+/* Mobile preview */
+.preview-mobile { max-width: 375px; margin: 0 auto; }
+/* Light mode preview */
+.preview-light-mode { background: #fff; border-radius: 8px; }
+.preview-light-mode :deep(.discord-preview) { background: #fff; color: #2e3338; }
+.preview-light-mode :deep(.channel-header) { background: #f2f3f5; border-bottom-color: #e3e5e8; }
+.preview-light-mode :deep(.messages-area) { background: #fff; }
+.preview-light-mode :deep(.username) { color: #060607; }
+.preview-light-mode :deep(.timestamp) { color: #747f8d; }
+.preview-light-mode :deep(.message-text) { color: #2e3338; }
+/* Variables table */
+.vars-table { display: flex; flex-direction: column; gap: 6px; }
+.var-row { display: grid; grid-template-columns: 140px 1fr 100px; gap: 8px; align-items: center; background: var(--bg-tertiary); border-radius: 6px; padding: 6px 10px; }
+.var-code { font-family: monospace; font-size: 12px; color: #57f287; cursor: pointer; padding: 2px 6px; background: rgba(87,242,135,.1); border-radius: 4px; }
+.var-code:hover { background: rgba(87,242,135,.2); }
+.var-desc { font-size: 12px; color: var(--text-muted); }
+.var-example { font-size: 11px; color: #72767d; font-family: monospace; text-align: right; }
 </style>

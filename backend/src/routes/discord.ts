@@ -42,6 +42,17 @@ discordRoutes.patch('/messages/:webhookId/:messageId', async (c) => {
   return c.json({ ok: true })
 })
 
+discordRoutes.delete('/messages/:webhookId/:messageId', async (c) => {
+  const webhookId = Number(c.req.param('webhookId'))
+  const messageId = c.req.param('messageId')
+  const db = getDb()
+  const webhook = db.prepare('SELECT * FROM webhooks WHERE id=?').get(webhookId) as any
+  if (!webhook) return c.json({ error: 'Webhook not found' }, 404)
+  const res = await fetch(`${webhook.url}/messages/${messageId}`, { method: 'DELETE' })
+  if (!res.ok && res.status !== 204) return c.json({ error: `Discord error ${res.status}` }, 422)
+  return c.json({ ok: true })
+})
+
 discordRoutes.post('/test/:webhookId', async (c) => {
   const webhookId = Number(c.req.param('webhookId'))
   const db = getDb()

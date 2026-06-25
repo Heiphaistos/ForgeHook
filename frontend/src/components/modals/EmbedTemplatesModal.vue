@@ -19,7 +19,10 @@
           <p style="color:var(--text-muted);font-size:11px">{{ t.description }}</p>
         </div>
 
-        <div v-for="t in filteredPresets" :key="`preset-${t.name}`" class="tpl-card" @click="$emit('load-preset', t.payload)">
+        <div v-for="t in filteredPresets" :key="`preset-${t.name}`" class="tpl-card"
+          @click="$emit('load-preset', t.payload)"
+          @mouseenter="hoveredPreset = t"
+          @mouseleave="hoveredPreset = null">
           <div class="tpl-card-icon">{{ t.icon }}</div>
           <strong style="font-size:13px">{{ t.name }}</strong>
           <p style="color:var(--text-muted);font-size:11px;margin-top:2px">{{ t.desc }}</p>
@@ -36,11 +39,26 @@
         <button @click="$emit('update:modelValue', false)" class="btn-secondary">Fermer</button>
       </div>
     </div>
+
+    <!-- Hover preview tooltip (#11) -->
+    <Teleport to="body">
+      <div v-if="hoveredPreset" class="tpl-hover-preview" :style="hoverStyle">
+        <div class="tpl-hover-title">{{ hoveredPreset.icon }} {{ hoveredPreset.name }}</div>
+        <div class="tpl-hover-embeds">
+          <div v-for="(embed, i) in hoveredPreset.payload.embeds" :key="i" class="tpl-hover-embed"
+            :style="{ borderLeftColor: embed.color ? '#' + embed.color.toString(16).padStart(6,'0') : '#5865f2' }">
+            <div v-if="embed.title" class="tpl-e-title">{{ embed.title }}</div>
+            <div v-if="embed.description" class="tpl-e-desc">{{ embed.description.slice(0, 80) }}{{ embed.description.length > 80 ? '…' : '' }}</div>
+          </div>
+        </div>
+        <div v-if="hoveredPreset.payload.content" class="tpl-hover-content">{{ hoveredPreset.payload.content }}</div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import type { Template } from '../../types/app'
 
 const props = defineProps<{
@@ -60,6 +78,18 @@ function loadTemplate(t: Template) {
 }
 
 const activeCat = ref('Tous')
+const hoveredPreset = ref<any>(null)
+const mouseX = ref(0)
+const mouseY = ref(0)
+
+const hoverStyle = computed(() => ({
+  left: `${Math.min(mouseX.value + 16, window.innerWidth - 320)}px`,
+  top: `${Math.min(mouseY.value, window.innerHeight - 200)}px`,
+}))
+
+function onMouseMove(e: MouseEvent) { mouseX.value = e.clientX; mouseY.value = e.clientY }
+onMounted(() => document.addEventListener('mousemove', onMouseMove))
+onBeforeUnmount(() => document.removeEventListener('mousemove', onMouseMove))
 
 const presetTemplates = [
   { cat: 'Jeux', icon: '🎮', name: 'Annonce de jeu', desc: "Sortie ou mise à jour d'un jeu",
@@ -124,4 +154,15 @@ const filteredUserTemplates = computed(() => {
 .items-center { align-items: center; }
 .gap-2 { gap: 8px; }
 .mb-1 { margin-bottom: 4px; }
+/* Hover preview */
+.tpl-hover-preview {
+  position: fixed; z-index: 9999; width: 300px; pointer-events: none;
+  background: #2f3136; border: 1px solid #40444b; border-radius: 8px;
+  padding: 10px 12px; box-shadow: 0 8px 24px rgba(0,0,0,.6); font-size: 12px; color: #dcddde;
+}
+.tpl-hover-title { font-weight: 700; font-size: 13px; margin-bottom: 8px; color: #fff; }
+.tpl-hover-embed { border-left: 4px solid #5865f2; border-radius: 3px; padding: 6px 8px; background: #202225; margin-bottom: 6px; }
+.tpl-e-title { font-weight: 700; color: #fff; margin-bottom: 3px; font-size: 12px; }
+.tpl-e-desc { color: #b9bbbe; font-size: 11px; white-space: pre-wrap; }
+.tpl-hover-content { color: #dcddde; font-size: 11px; margin-top: 4px; padding: 4px 6px; background: #36393f; border-radius: 3px; }
 </style>

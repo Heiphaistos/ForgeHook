@@ -8,7 +8,7 @@
     </div>
 
     <div class="section">
-      <label class="fh-label">Auteur</label>
+      <label class="fh-label">Auteur <span :class="charClass(authorName.length, 256)">{{ authorName.length }}/256</span></label>
       <input v-model="authorName" placeholder="Nom de l'auteur" class="fh-input" />
       <input v-model="authorUrl" placeholder="Lien auteur (https://...)" class="fh-input mt-1" />
       <div class="img-row mt-1">
@@ -18,20 +18,19 @@
     </div>
 
     <div class="section">
-      <label class="fh-label">Titre</label>
+      <label class="fh-label">Titre <span :class="charClass(embed.title?.length ?? 0, 256)">{{ embed.title?.length ?? 0 }}/256</span></label>
       <input v-model="embed.title" placeholder="Titre de l'embed" class="fh-input" />
       <input v-model="embed.url" placeholder="URL du titre (optionnel)" class="fh-input mt-1" />
     </div>
 
     <div class="section">
       <div class="desc-label-row">
-        <label class="fh-label">Description</label>
+        <label class="fh-label">Description <span :class="charClass(embed.description?.length ?? 0, 4096)">{{ embed.description?.length ?? 0 }}/4096</span></label>
         <EmojiPicker @select="insertEmoji" />
       </div>
       <textarea ref="descTextarea" v-model="embed.description"
         placeholder="Description — **gras**, *italique*, `code`, [lien](url), ~~barré~~"
         class="fh-textarea desc-textarea" rows="8" />
-      <div class="char-count">{{ embed.description?.length ?? 0 }} caractères</div>
     </div>
 
     <div class="section row">
@@ -65,7 +64,7 @@
 
     <div class="section row">
       <div class="half">
-        <label class="fh-label">Pied de page</label>
+        <label class="fh-label">Pied de page <span :class="charClass(footerText.length, 2048)">{{ footerText.length }}/2048</span></label>
         <input v-model="footerText" placeholder="Texte du footer" class="fh-input" />
         <div class="img-row mt-1">
           <input v-model="footerIcon" placeholder="URL icône footer" class="fh-input" />
@@ -84,7 +83,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import EmbedColorPicker from './EmbedColorPicker.vue'
 import EmbedFieldEditor from './EmbedFieldEditor.vue'
 import EmojiPicker from '../shared/EmojiPicker.vue'
@@ -155,6 +154,12 @@ function setNow() {
   timestampLocal.value = toLocalInput(embed.value.timestamp)
 }
 
+function charClass(len: number, max: number) {
+  if (len > max) return 'char-count char-over'
+  if (len > max * 0.9) return 'char-count char-warn'
+  return 'char-count'
+}
+
 // Upload
 const fileInput = ref<HTMLInputElement | null>(null)
 const uploadTarget = ref<'thumbnail' | 'image' | 'authorIcon' | 'footerIcon'>('image')
@@ -191,7 +196,9 @@ async function handleUpload(e: Event) {
 .desc-label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 .desc-label-row .fh-label { margin-bottom: 0; }
 .desc-textarea { min-height: 140px; }
-.char-count { font-size: 11px; color: #72767d; text-align: right; margin-top: 2px; }
+.char-count { font-size: 10px; color: #72767d; font-weight: 500; margin-left: 4px; }
+.char-warn { color: #faa61a; }
+.char-over { color: #ed4245; font-weight: 700; }
 .row { display: flex; gap: 12px; }
 .half { flex: 1; min-width: 0; }
 .mt-1 { margin-top: 4px; }

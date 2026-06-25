@@ -32,7 +32,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import type { DiscordMessage } from '../../types/discord'
-import { exportJSON, exportMarkdown, exportText, exportHTML, exportCurl, downloadFile } from '../../utils/exportEmbed'
+import { exportJSON, exportMarkdown, exportText, exportHTML, exportCurl, exportPowerShell, downloadFile } from '../../utils/exportEmbed'
 
 const props = defineProps<{
   modelValue: boolean
@@ -51,6 +51,7 @@ const tabs = [
   { id: 'html', label: 'HTML', ext: 'html', mime: 'text/html' },
   { id: 'txt', label: 'Texte', ext: 'txt', mime: 'text/plain' },
   { id: 'curl', label: 'cURL', ext: 'sh', mime: 'text/plain' },
+  { id: 'ps1', label: 'PowerShell', ext: 'ps1', mime: 'text/plain' },
 ]
 
 const output = computed(() => {
@@ -61,6 +62,7 @@ const output = computed(() => {
     case 'html': return exportHTML(msg)
     case 'txt': return exportText(msg)
     case 'curl': return exportCurl(msg, props.webhookUrl ?? 'https://discord.com/api/webhooks/...')
+    case 'ps1': return exportPowerShell(msg, props.webhookUrl ?? 'https://discord.com/api/webhooks/...')
     default: return ''
   }
 })

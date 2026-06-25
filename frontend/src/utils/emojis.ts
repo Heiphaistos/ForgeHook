@@ -2,12 +2,14 @@ export interface EmojiCategory {
   name: string
   icon: string
   emojis: string[]
+  keywords?: string[]
 }
 
 export const EMOJI_CATEGORIES: EmojiCategory[] = [
   {
     name: 'Smiley',
     icon: '😀',
+    keywords: ['visage', 'emoticone', 'humeur', 'expression', 'rire', 'pleurer', 'amour', 'fache', 'zombie', 'chat'],
     emojis: [
       '😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇',
       '🥰','😍','🤩','😘','😗','😚','😙','🥲','😋','😛','😜','🤪','😝',
@@ -23,6 +25,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   {
     name: 'Personnes',
     icon: '👋',
+    keywords: ['personne', 'main', 'geste', 'famille', 'couple', 'bebe', 'femme', 'homme', 'corps', 'peau'],
     emojis: [
       '👋','🤚','🖐️','✋','🖖','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙',
       '👈','👉','👆','🖕','👇','☝️','👍','👎','✊','👊','🤛','🤜','👏',
@@ -38,6 +41,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   {
     name: 'Animaux',
     icon: '🐶',
+    keywords: ['animal', 'chien', 'chat', 'oiseau', 'poisson', 'insecte', 'dragon', 'nature', 'jungle', 'zoo'],
     emojis: [
       '🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷',
       '🐸','🐵','🙈','🙉','🙊','🐔','🐧','🐦','🐤','🦆','🦅','🦉','🦇',
@@ -53,6 +57,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   {
     name: 'Nature',
     icon: '🌿',
+    keywords: ['plante', 'fleur', 'arbre', 'meteo', 'soleil', 'pluie', 'neige', 'feu', 'eau', 'terre', 'ciel'],
     emojis: [
       '🌲','🌳','🌴','🌱','🌿','☘️','🍀','🎍','🪴','🎋','🍃','🍂','🍁',
       '🍄','🌾','💐','🌷','🌹','🥀','🌺','🌸','🌼','🌻','🌞','🌝','🌛',
@@ -65,6 +70,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   {
     name: 'Nourriture',
     icon: '🍕',
+    keywords: ['food', 'manger', 'boire', 'fruit', 'legume', 'pizza', 'burger', 'cuisine', 'repas', 'boisson', 'dessert'],
     emojis: [
       '🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭',
       '🍍','🥥','🥝','🍅','🍆','🥑','🥦','🥬','🥒','🌶️','🫑','🧄','🧅',
@@ -79,6 +85,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   {
     name: 'Voyages',
     icon: '🚗',
+    keywords: ['transport', 'voiture', 'avion', 'voyage', 'train', 'bateau', 'ville', 'batiment', 'pays', 'carte'],
     emojis: [
       '🚗','🚕','🚙','🚌','🚎','🏎️','🚓','🚑','🚒','🚐','🛻','🚚','🚛',
       '🚜','🏍️','🛵','🚲','🛴','🛹','🛼','✈️','🛫','🛬','🛩️','💺','🛸',
@@ -91,6 +98,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   {
     name: 'Activités',
     icon: '⚽',
+    keywords: ['sport', 'jeu', 'football', 'basket', 'tennis', 'musique', 'art', 'hobby', 'loisir', 'game', 'gaming'],
     emojis: [
       '⚽','🏀','🏈','⚾','🥎','🏐','🏉','🎾','🏸','🏒','🏑','🥍','🏏',
       '🪃','🥅','⛳','🪁','🏹','🎣','🤿','🥊','🥋','🎽','🛹','🛷','⛸️',
@@ -103,6 +111,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   {
     name: 'Objets',
     icon: '💡',
+    keywords: ['objet', 'outil', 'technologie', 'telephone', 'ordinateur', 'livre', 'argent', 'outil', 'medecine', 'science'],
     emojis: [
       '💡','🔦','🕯️','🪔','💎','🔑','🗝️','🔒','🔓','🚪','🪞','🪟','🛋️',
       '🪑','🚽','🚿','🛁','🧴','🧷','🧹','🧺','🧻','🪣','🧼','🪥','🧽',
@@ -123,6 +132,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   {
     name: 'Symboles',
     icon: '❤️',
+    keywords: ['coeur', 'amour', 'symbole', 'signe', 'fleche', 'nombre', 'lettre', 'religion', 'ok', 'check', 'star'],
     emojis: [
       '❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞',
       '💓','💗','💖','💘','💝','💟','☮️','✝️','☪️','🕉️','✡️','🔯','🕎',
@@ -142,6 +152,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   {
     name: 'Drapeaux',
     icon: '🏁',
+    keywords: ['drapeau', 'pays', 'nation', 'france', 'usa', 'europe', 'monde'],
     emojis: [
       '🏁','🚩','🎌','🏴','🏳️','🏳️‍🌈','🏳️‍⚧️','🏴‍☠️',
       '🇦🇩','🇦🇪','🇦🇫','🇦🇬','🇦🇱','🇦🇲','🇦🇴','🇦🇷','🇦🇸','🇦🇹',

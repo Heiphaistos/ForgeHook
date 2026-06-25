@@ -56,7 +56,9 @@
             </button>
             <button v-if="h.message_id && h.webhook_id && h.send_type !== 'bot'" @click="editMessage(h)"
               class="btn-icon-sm" title="Modifier le message Discord">✏️</button>
-            <button @click="remove(h.id)" class="btn-icon-sm danger" title="Supprimer">✕</button>
+            <button v-if="h.message_id && h.webhook_id && h.send_type !== 'bot'" @click="deleteDiscordMsg(h)"
+              class="btn-icon-sm" :class="{ 'deleting': deletingId === h.id }" title="Supprimer le message sur Discord">🗑️</button>
+            <button @click="remove(h.id)" class="btn-icon-sm danger" title="Supprimer de l'historique">✕</button>
           </div>
         </div>
       </div>
@@ -111,6 +113,7 @@ const filterTo = ref('')
 const selected = ref<Set<number>>(new Set())
 const payloadModal = ref<HistoryEntry | null>(null)
 const resendingId = ref<number | null>(null)
+const deletingId = ref<number | null>(null)
 
 let debounceTimer: ReturnType<typeof setTimeout>
 function debouncedLoad() {
@@ -194,6 +197,20 @@ async function resend(h: HistoryEntry) {
     ui.notify(e?.response?.data?.error ?? 'Erreur re-envoi', 'error')
   } finally {
     resendingId.value = null
+  }
+}
+
+async function deleteDiscordMsg(h: HistoryEntry) {
+  if (!confirm('Supprimer ce message sur Discord ? (irréversible)')) return
+  if (deletingId.value) return
+  deletingId.value = h.id
+  try {
+    await api.delete(`/discord/messages/${h.webhook_id}/${h.message_id}`)
+    ui.notify('Message supprimé sur Discord ✅')
+  } catch (e: any) {
+    ui.notify(e?.response?.data?.error ?? 'Erreur suppression Discord', 'error')
+  } finally {
+    deletingId.value = null
   }
 }
 

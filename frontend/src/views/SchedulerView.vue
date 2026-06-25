@@ -37,6 +37,19 @@
       <div v-if="!jobs.length" class="empty-state">Aucun job planifié.</div>
     </div>
 
+    <!-- Vue calendrier — prochaines exécutions (#15) -->
+    <div v-if="enabledJobs.length" class="next-runs-section">
+      <h3 class="next-runs-title">📅 Prochaines exécutions (72h)</h3>
+      <div class="next-runs-list">
+        <div v-for="entry in nextRunEntries" :key="`${entry.jobId}-${entry.time}`" class="next-run-item">
+          <span class="next-run-time">{{ entry.label }}</span>
+          <span class="next-run-name">{{ entry.name }}</span>
+          <span class="next-run-wh">→ {{ webhookName(entry.webhookId) }}</span>
+        </div>
+        <div v-if="!nextRunEntries.length" class="next-run-empty">Aucune exécution dans les 72h détectée.</div>
+      </div>
+    </div>
+
     <div v-if="showForm" class="modal-overlay" @click.self="showForm = false">
       <div class="modal" style="max-width:580px">
         <h3>{{ editing ? 'Modifier job' : 'Nouveau job planifié' }}</h3>
@@ -78,7 +91,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import api from '../api/client'
 import type { ScheduledJob, Webhook } from '../types/app'
 import { useUiStore } from '../stores/ui'
@@ -121,6 +134,68 @@ function relTime(d: string): string {
   if (hours < 24) return `il y a ${hours}h`
   return `il y a ${Math.floor(hours / 24)}j`
 }
+
+const enabledJobs = computed(() => jobs.value.filter(j => j.enabled))
+
+// Simple cron next-run calculator (handles basic patterns)
+function getNextRuns(cronExpr: string, count = 5): Date[] {
+  const results: Date[] = []
+  const [m, h, dom, mon, dow] = cronExpr.split(' ')
+  const now = new Date()
+  let cursor = new Date(now)
+  cursor.setSeconds(0, 0)
+  cursor.setMinutes(cursor.getMinutes() + 1)
+  let tries = 0
+
+  while (results.length < count && tries++ < 60 * 24 * 4) {
+    const curMin = cursor.getMinutes()
+    const curHour = cursor.getHours()
+    const curDom = cursor.getDate()
+    const curMon = cursor.getMonth() + 1
+    const curDow = cursor.getDay()
+
+    const matchField = (field: string, val: number): boolean => {
+      if (field === '*') return true
+      if (field.includes('-')) {
+        const [a, b] = field.split('-').map(Number)
+        return val >= a && val <= b
+      }
+      if (field.includes(',')) return field.split(',').map(Number).includes(val)
+      if (field.includes('/')) {
+        const [base, step] = field.split('/').map(s => s === '*' ? 0 : Number(s))
+        return (val - base) % step === 0
+      }
+      return Number(field) === val
+    }
+
+    if (matchField(mon, curMon) && matchField(dom, curDom) && matchField(dow, curDow) && matchField(h, curHour) && matchField(m, curMin)) {
+      results.push(new Date(cursor))
+    }
+    cursor.setMinutes(cursor.getMinutes() + 1)
+  }
+  return results
+}
+
+const nextRunEntries = computed(() => {
+  const entries: { jobId: number; time: number; label: string; name: string; webhookId: number }[] = []
+  const horizon = Date.now() + 72 * 3600 * 1000
+  for (const j of enabledJobs.value) {
+    try {
+      const runs = getNextRuns(j.cron_expr, 5)
+      for (const r of runs) {
+        if (r.getTime() > horizon) break
+        entries.push({
+          jobId: j.id,
+          time: r.getTime(),
+          label: r.toLocaleString('fr-FR', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }),
+          name: j.name,
+          webhookId: j.webhook_id,
+        })
+      }
+    } catch {}
+  }
+  return entries.sort((a, b) => a.time - b.time).slice(0, 20)
+})
 
 function describeCron(expr: string): string {
   const map: Record<string, string> = {
@@ -236,4 +311,13 @@ async function remove(id: number) {
 .cron-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .preset-btn { font-size: 11px; padding: 4px 10px; }
 .empty-state { color: var(--text-muted); padding: 48px; text-align: center; grid-column: 1 / -1; }
+/* Next runs calendar */
+.next-runs-section { margin-top: 24px; }
+.next-runs-title { font-size: 15px; font-weight: 700; margin-bottom: 10px; color: var(--text); }
+.next-runs-list { display: flex; flex-direction: column; gap: 4px; }
+.next-run-item { display: grid; grid-template-columns: 160px 1fr auto; gap: 10px; align-items: center; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; padding: 7px 12px; font-size: 13px; }
+.next-run-time { font-family: monospace; font-size: 12px; color: #57f287; font-weight: 600; }
+.next-run-name { color: #fff; font-weight: 600; }
+.next-run-wh { font-size: 11px; color: var(--text-muted); }
+.next-run-empty { color: var(--text-muted); font-size: 13px; }
 </style>

@@ -2,7 +2,16 @@
   <div class="emoji-picker-wrapper" ref="wrapperRef">
     <button type="button" @click.stop="toggle" class="emoji-trigger-btn" title="Insérer un emoji">😀</button>
     <div v-if="open" class="emoji-panel" @click.stop>
-      <div class="emoji-cats">
+      <!-- Search -->
+      <input v-model="searchQ" class="emoji-search" placeholder="🔍 Rechercher..." @click.stop />
+
+      <!-- Category tabs (hidden during search) -->
+      <div v-if="!searchQ" class="emoji-cats">
+        <button
+          v-if="recentEmojis.length"
+          :class="['emoji-cat-btn', { active: activeCat === '__recent__' }]"
+          @click="activeCat = '__recent__'"
+          title="Récents">🕐</button>
         <button
           v-for="cat in EMOJI_CATEGORIES"
           :key="cat.name"
@@ -11,14 +20,28 @@
           :title="cat.name"
         >{{ cat.icon }}</button>
       </div>
-      <div class="emoji-cat-label">{{ activeCat }}</div>
+      <div v-if="!searchQ" class="emoji-cat-label">
+        {{ activeCat === '__recent__' ? 'Récents' : activeCat }}
+      </div>
+
       <div class="emoji-grid">
-        <button
-          v-for="emoji in currentEmojis"
-          :key="emoji"
-          class="emoji-btn"
-          @click="select(emoji)"
-        >{{ emoji }}</button>
+        <template v-if="searchQ">
+          <button
+            v-for="emoji in searchResults"
+            :key="emoji"
+            class="emoji-btn"
+            @click="select(emoji)"
+          >{{ emoji }}</button>
+          <div v-if="!searchResults.length" class="emoji-empty">Aucun résultat</div>
+        </template>
+        <template v-else>
+          <button
+            v-for="emoji in currentEmojis"
+            :key="emoji"
+            class="emoji-btn"
+            @click="select(emoji)"
+          >{{ emoji }}</button>
+        </template>
       </div>
     </div>
   </div>
@@ -28,21 +51,56 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { EMOJI_CATEGORIES } from '../../utils/emojis'
 
+const RECENT_KEY = 'fh_recent_emojis'
+const MAX_RECENT = 32
+
 const emit = defineEmits<{ (e: 'select', emoji: string): void }>()
 
 const open = ref(false)
 const activeCat = ref(EMOJI_CATEGORIES[0].name)
 const wrapperRef = ref<HTMLElement | null>(null)
+const searchQ = ref('')
+const recentEmojis = ref<string[]>([])
 
-const currentEmojis = computed(() =>
-  EMOJI_CATEGORIES.find(c => c.name === activeCat.value)?.emojis ?? []
-)
+function loadRecent() {
+  try { recentEmojis.value = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]') } catch { recentEmojis.value = [] }
+}
+
+function saveRecent(emoji: string) {
+  const list = [emoji, ...recentEmojis.value.filter(e => e !== emoji)].slice(0, MAX_RECENT)
+  recentEmojis.value = list
+  localStorage.setItem(RECENT_KEY, JSON.stringify(list))
+}
+
+const currentEmojis = computed(() => {
+  if (activeCat.value === '__recent__') return recentEmojis.value
+  return EMOJI_CATEGORIES.find(c => c.name === activeCat.value)?.emojis ?? []
+})
+
+const searchResults = computed(() => {
+  const q = searchQ.value.toLowerCase().trim()
+  if (!q) return []
+  const hits: string[] = []
+  for (const cat of EMOJI_CATEGORIES) {
+    if (hits.length >= 64) break
+    const catMatch = cat.name.toLowerCase().includes(q) || cat.keywords?.some(k => k.includes(q))
+    if (catMatch) {
+      for (const emoji of cat.emojis) {
+        if (hits.length >= 64) break
+        hits.push(emoji)
+      }
+    }
+  }
+  return hits
+})
 
 function toggle() {
   open.value = !open.value
+  if (open.value) { loadRecent(); searchQ.value = '' }
 }
 
 function select(emoji: string) {
+  saveRecent(emoji)
   emit('select', emoji)
   open.value = false
 }
@@ -88,6 +146,18 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick, true))
   flex-direction: column;
   gap: 6px;
 }
+
+.emoji-search {
+  width: 100%;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 5px 8px;
+  box-sizing: border-box;
+}
+.emoji-search:focus { outline: none; border-color: var(--accent); }
 
 .emoji-cats {
   display: flex;
@@ -139,4 +209,6 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick, true))
   transition: background 0.1s;
 }
 .emoji-btn:hover { background: var(--bg-tertiary); }
+
+.emoji-empty { font-size: 11px; color: var(--text-muted); grid-column: 1/-1; text-align: center; padding: 12px; }
 </style>
