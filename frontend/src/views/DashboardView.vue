@@ -125,19 +125,22 @@ const recentHistory = ref<(HistoryEntry & { send_type?: string })[]>([])
 const maxDayN = computed(() => Math.max(1, ...msgStats.value.byDay.map(d => d.n)))
 
 onMounted(async () => {
-  const [wh, bots, tpl, rss, jobs, hist, stats] = await Promise.all([
-    api.get('/webhooks'),
-    api.get('/bots'),
-    api.get('/templates'),
-    api.get('/rss'),
-    api.get('/scheduler'),
-    api.get('/history?limit=5'),
-    api.get('/history/stats'),
-  ])
-  counts.value = { webhooks: wh.data.length, bots: bots.data.length, templates: tpl.data.length, rss: rss.data.length, jobs: jobs.data.length }
-  msgStats.value = stats.data
-  recentHistory.value = hist.data
-
+  try {
+    const [wh, bots, tpl, rss, jobs, hist, stats] = await Promise.all([
+      api.get('/webhooks'),
+      api.get('/bots'),
+      api.get('/templates'),
+      api.get('/rss'),
+      api.get('/scheduler'),
+      api.get('/history?limit=5'),
+      api.get('/history/stats'),
+    ])
+    counts.value = { webhooks: wh.data.length, bots: bots.data.length, templates: tpl.data.length, rss: rss.data.length, jobs: jobs.data.length }
+    msgStats.value = stats.data
+    recentHistory.value = hist.data
+  } catch {
+    // Dashboard affiche les zéros si API indisponible
+  }
   api.get('/bots/discord-bot/status').then(r => {
     botStatus.value = r.data
   }).catch(() => {

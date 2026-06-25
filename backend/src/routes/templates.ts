@@ -15,7 +15,16 @@ export const templateRoutes = new Hono()
 templateRoutes.use('*', requireAuth)
 
 templateRoutes.get('/', (c) => {
-  return c.json(getDb().prepare('SELECT * FROM templates ORDER BY category, name').all())
+  return c.json(getDb().prepare('SELECT * FROM templates ORDER BY favorited DESC, category, name').all())
+})
+
+templateRoutes.patch('/:id/favorite', (c) => {
+  const id = Number(c.req.param('id'))
+  const t = getDb().prepare('SELECT favorited FROM templates WHERE id=?').get(id) as any
+  if (!t) return c.json({ error: 'Not found' }, 404)
+  const newVal = t.favorited ? 0 : 1
+  getDb().prepare('UPDATE templates SET favorited=? WHERE id=?').run(newVal, id)
+  return c.json({ ok: true, favorited: newVal === 1 })
 })
 
 templateRoutes.post('/', async (c) => {

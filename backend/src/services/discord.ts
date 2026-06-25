@@ -26,18 +26,28 @@ export async function sendWebhook(
   threadId?: string
 ): Promise<{ ok: boolean; status: number; error?: string; message_id?: string }> {
   const target = threadId ? `${url}?thread_id=${encodeURIComponent(threadId)}&wait=true` : `${url}?wait=true`
-  const res = await fetch(target, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(10_000),
-  })
-  if (res.ok) {
-    const data = await res.json().catch(() => ({})) as any
-    return { ok: true, status: res.status, message_id: data?.id }
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await fetch(target, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (res.status === 429) {
+      if (attempt === 2) return { ok: false, status: 429, error: 'Discord rate limit — réessayez dans quelques secondes.' }
+      const data = await res.json().catch(() => ({})) as any
+      const wait = Math.min(((data.retry_after as number) ?? 1) * 1000, 30_000)
+      await new Promise(r => setTimeout(r, wait))
+      continue
+    }
+    if (res.ok) {
+      const data = await res.json().catch(() => ({})) as any
+      return { ok: true, status: res.status, message_id: data?.id }
+    }
+    const text = await res.text().catch(() => 'Unknown Discord error')
+    return { ok: false, status: res.status, error: text }
   }
-  const text = await res.text().catch(() => 'Unknown Discord error')
-  return { ok: false, status: res.status, error: text }
+  return { ok: false, status: 429, error: 'Rate limit épuisé après 3 tentatives.' }
 }
 
 export async function editWebhookMessage(

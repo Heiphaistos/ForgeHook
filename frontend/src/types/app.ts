@@ -22,6 +22,7 @@ export interface Template {
   payload: string
   category: string
   preview_color: string
+  favorited?: number
   created_at?: string
 }
 

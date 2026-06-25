@@ -16,6 +16,7 @@ export function getDb(): Database.Database {
     db.pragma('journal_mode = WAL')
     db.pragma('foreign_keys = ON')
     db.pragma('secure_delete = ON')
+    db.pragma('busy_timeout = 5000')
     const schema = readFileSync(join(__dirname, 'schema.sql'), 'utf-8')
     db.exec(schema)
     const migrations = [
@@ -23,6 +24,7 @@ export function getDb(): Database.Database {
       'ALTER TABLE history ADD COLUMN channel_id TEXT',
       "ALTER TABLE history ADD COLUMN send_type TEXT DEFAULT 'webhook'",
       'ALTER TABLE history ADD COLUMN message_id TEXT',
+      'ALTER TABLE templates ADD COLUMN favorited INTEGER DEFAULT 0',
     ]
     for (const m of migrations) {
       try { db.exec(m) } catch { /* column already exists */ }

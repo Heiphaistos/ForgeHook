@@ -14,6 +14,7 @@
         <option value="date">Trier par date</option>
       </select>
       <div class="cat-pills">
+        <button :class="['pill', { active: filterFav }]" @click="filterFav = !filterFav">⭐ Favoris</button>
         <button v-for="c in allCategories" :key="c"
           :class="['pill', { active: filterCat === c }]"
           @click="filterCat = filterCat === c ? '' : c">
@@ -43,9 +44,11 @@
             <span v-if="vars(t).length > 4" class="var-chip muted">+{{ vars(t).length - 4 }}</span>
           </div>
           <div class="tpl-actions" @click.stop>
+            <button @click="toggleFav(t)" :class="['fav-btn', { active: t.favorited }]" :title="t.favorited ? 'Retirer des favoris' : 'Ajouter aux favoris'">⭐</button>
             <button @click="use(t)" class="btn-primary" style="font-size:12px;padding:4px 10px">⚡ Utiliser</button>
-            <button @click="openPreview(t)" class="btn-secondary" style="font-size:12px;padding:4px 10px">👁 Preview</button>
-            <button @click="duplicate(t)" class="btn-secondary" style="font-size:12px;padding:4px 10px">⎘ Dupliquer</button>
+            <button @click="openQuickSend(t)" class="btn-secondary" style="font-size:12px;padding:4px 10px">🚀 Envoyer</button>
+            <button @click="openPreview(t)" class="btn-secondary" style="font-size:12px;padding:4px 10px">👁</button>
+            <button @click="duplicate(t)" class="btn-secondary" style="font-size:12px;padding:4px 10px">⎘</button>
             <button @click="openEdit(t)" class="btn-secondary" style="font-size:12px;padding:4px 10px">✏️</button>
             <button @click="remove(t.id)" class="btn-danger-sm">🗑</button>
           </div>
@@ -104,6 +107,29 @@
       </div>
     </div>
 
+    <!-- Quick-send modal -->
+    <div v-if="quickSendModal" class="modal-overlay" @click.self="quickSendModal = null">
+      <div class="modal" style="max-width:420px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <h3>🚀 Envoyer — {{ quickSendModal.tpl.name }}</h3>
+          <button @click="quickSendModal = null" style="background:none;border:none;color:var(--text-muted);font-size:18px;cursor:pointer">✕</button>
+        </div>
+        <div class="section">
+          <label class="fh-label">Webhook de destination</label>
+          <select v-model="quickSendModal.webhookId" class="fh-select w-full">
+            <option v-for="w in webhooksStore.webhooks" :key="w.id" :value="w.id">{{ w.name }}</option>
+          </select>
+        </div>
+        <p v-if="!webhooksStore.webhooks.length" class="error">Aucun webhook configuré</p>
+        <div class="modal-actions">
+          <button @click="doQuickSend" class="btn-primary" :disabled="quickSendModal.sending || !quickSendModal.webhookId">
+            {{ quickSendModal.sending ? '⏳ Envoi...' : '🚀 Envoyer' }}
+          </button>
+          <button @click="quickSendModal = null" class="btn-secondary">Annuler</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Create/edit modal -->
     <div v-if="showForm" class="modal-overlay" @click.self="showForm = false">
       <div class="modal" style="max-width:600px">
@@ -150,10 +176,12 @@ import api from '../api/client'
 import type { Template } from '../types/app'
 import { useUiStore } from '../stores/ui'
 import { useEmbedStore } from '../stores/embed'
+import { useWebhooksStore } from '../stores/webhooks'
 import { useRouter } from 'vue-router'
 
 const ui = useUiStore()
 const embedStore = useEmbedStore()
+const webhooksStore = useWebhooksStore()
 const router = useRouter()
 const templates = ref<Template[]>([])
 const showForm = ref(false)
@@ -163,8 +191,10 @@ const form = ref({ name: '', description: '', category: 'general', preview_color
 const search = ref('')
 const sortBy = ref<'name' | 'category' | 'date'>('name')
 const filterCat = ref('')
+const filterFav = ref(false)
 const previewTarget = ref<Template | null>(null)
 const varsModal = ref<{ tpl: Template; vars: string[]; values: Record<string, string> } | null>(null)
+const quickSendModal = ref<{ tpl: Template; webhookId: number | null; sending: boolean } | null>(null)
 
 const allCategories = computed(() => [...new Set(templates.value.map(t => t.category))])
 
@@ -172,6 +202,7 @@ const formVars = computed(() => extractVars(form.value.payloadStr))
 
 const filteredTemplates = computed(() => {
   let list = templates.value
+  if (filterFav.value) list = list.filter(t => t.favorited)
   if (search.value) {
     const q = search.value.toLowerCase()
     list = list.filter(t => t.name.toLowerCase().includes(q) || (t.description ?? '').toLowerCase().includes(q))
@@ -207,8 +238,10 @@ function previewPayload(t: Template): any {
 }
 
 onMounted(async () => {
-  const { data } = await api.get('/templates')
-  templates.value = data
+  await Promise.all([
+    api.get('/templates').then(({ data }) => { templates.value = data }),
+    webhooksStore.load(),
+  ])
 })
 
 function openPreview(t: Template) { previewTarget.value = t }
@@ -297,6 +330,44 @@ async function duplicate(t: Template) {
   }
 }
 
+async function toggleFav(t: Template) {
+  const { data } = await api.patch(`/templates/${t.id}/favorite`, {})
+  t.favorited = data.favorited ? 1 : 0
+}
+
+function openQuickSend(t: Template) {
+  quickSendModal.value = { tpl: t, webhookId: webhooksStore.webhooks[0]?.id ?? null, sending: false }
+}
+
+async function doQuickSend() {
+  if (!quickSendModal.value || !quickSendModal.value.webhookId) return
+  quickSendModal.value.sending = true
+  try {
+    const { tpl, webhookId } = quickSendModal.value
+    const vs = vars(tpl)
+    let raw = typeof tpl.payload === 'string' ? tpl.payload : JSON.stringify(tpl.payload)
+    const payload = JSON.parse(raw)
+    const embeds: any[] = payload.embeds ?? []
+    const chunks = embeds.length ? Array.from({ length: Math.ceil(embeds.length / 10) }, (_, i) => embeds.slice(i * 10, i * 10 + 10)) : [[]]
+    for (let c = 0; c < chunks.length; c++) {
+      await api.post('/discord/send', {
+        webhook_id: webhookId,
+        payload: {
+          content: c === 0 ? (payload.content || undefined) : undefined,
+          username: payload.username || undefined,
+          avatar_url: payload.avatar_url || undefined,
+          embeds: chunks[c].length ? chunks[c] : undefined,
+        },
+      })
+    }
+    ui.notify(`Template "${tpl.name}" envoyé !`)
+    quickSendModal.value = null
+  } catch (e: any) {
+    ui.notify(e?.response?.data?.error ?? 'Erreur envoi', 'error')
+    quickSendModal.value!.sending = false
+  }
+}
+
 async function remove(id: number) {
   if (!confirm('Supprimer ce template ?')) return
   await api.delete(`/templates/${id}`)
@@ -335,4 +406,6 @@ async function remove(id: number) {
 .pe-fval { font-size: 14px; color: #dcddde; }
 .pe-footer { font-size: 12px; color: #72767d; border-top: 1px solid #40444b; padding-top: 6px; }
 .empty-state { color: var(--text-muted); text-align: center; padding: 48px; }
+.fav-btn { background: none; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; padding: 3px 6px; font-size: 14px; opacity: 0.4; transition: all 0.15s; }
+.fav-btn:hover, .fav-btn.active { opacity: 1; border-color: #fee75c; }
 </style>

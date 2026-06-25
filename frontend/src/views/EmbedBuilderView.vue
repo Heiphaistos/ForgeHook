@@ -28,13 +28,18 @@
           <span class="section-hint">Texte envoyé au-dessus des embeds</span>
         </div>
         <div class="section">
-          <label class="fh-label">
-            Contenu du message
-            <span class="field-hint">Texte libre, @everyone, @here, mentions, markdown Discord</span>
-          </label>
-          <textarea v-model="embedStore.message.content"
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <label class="fh-label" style="margin:0">
+              Contenu du message
+              <span class="field-hint">Markdown Discord supporté</span>
+            </label>
+            <MentionBuilder @insert="insertMention" />
+          </div>
+          <textarea v-model="embedStore.message.content" ref="contentTextarea"
             placeholder="Ex: @everyone Nouvelle annonce ! 🎉  ← Ce texte apparaît AVANT l'embed"
             class="fh-textarea" rows="2" />
+          <div v-if="embedStore.message.content" class="md-preview"
+            v-html="renderedContent" />
         </div>
       </div>
 
@@ -481,12 +486,14 @@ import EmbedTemplatesModal from '../components/modals/EmbedTemplatesModal.vue'
 import EmbedFontsModal from '../components/modals/EmbedFontsModal.vue'
 import ExportModal from '../components/modals/ExportModal.vue'
 import BotChannelPicker from '../components/bots/BotChannelPicker.vue'
+import MentionBuilder from '../components/shared/MentionBuilder.vue'
 import { useEmbedStore } from '../stores/embed'
 import { useWebhooksStore } from '../stores/webhooks'
 import { useUiStore } from '../stores/ui'
 import { emptyEmbed } from '../types/discord'
 import type { Template } from '../types/app'
 import api from '../api/client'
+import { renderDiscordMarkdown } from '../utils/discordMarkdown'
 
 const router = useRouter()
 const route = useRoute()
@@ -502,6 +509,24 @@ const ui = useUiStore()
 const threadId = ref('')
 const sent = ref(false)
 const showJson = ref(false)
+const contentTextarea = ref<HTMLTextAreaElement>()
+
+const renderedContent = computed(() => renderDiscordMarkdown(embedStore.message.content ?? ''))
+
+function insertMention(text: string) {
+  const ta = contentTextarea.value
+  if (!ta) {
+    embedStore.message.content = (embedStore.message.content ?? '') + text
+    return
+  }
+  const start = ta.selectionStart ?? 0
+  const end = ta.selectionEnd ?? 0
+  const before = (embedStore.message.content ?? '').slice(0, start)
+  const after = (embedStore.message.content ?? '').slice(end)
+  embedStore.message.content = before + text + after
+  ta.focus()
+  setTimeout(() => ta.setSelectionRange(start + text.length, start + text.length), 0)
+}
 const stepMode = ref(false)
 const stepImgInputs = ref<HTMLInputElement[]>([])
 const stepShowCode = ref<boolean[]>([])
@@ -1102,4 +1127,27 @@ async function uploadAvatar(e: Event) {
 .var-code:hover { background: rgba(87,242,135,.2); }
 .var-desc { font-size: 12px; color: var(--text-muted); }
 .var-example { font-size: 11px; color: #72767d; font-family: monospace; text-align: right; }
+/* Markdown preview */
+.md-preview {
+  margin-top: 4px;
+  background: #36393f;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: #dcddde;
+  min-height: 24px;
+  border: 1px solid var(--border);
+  line-height: 1.5;
+}
+.md-preview :deep(strong) { font-weight: 700; color: #fff; }
+.md-preview :deep(em) { font-style: italic; }
+.md-preview :deep(.md-underline) { text-decoration: underline; }
+.md-preview :deep(s) { text-decoration: line-through; color: #72767d; }
+.md-preview :deep(.md-code) { background: #2f3136; border-radius: 3px; padding: 0 4px; font-family: monospace; font-size: 12px; }
+.md-preview :deep(.md-code-block) { background: #2f3136; border-radius: 4px; padding: 8px; font-family: monospace; font-size: 12px; margin: 4px 0; white-space: pre; }
+.md-preview :deep(.md-spoiler) { background: #202225; color: transparent; border-radius: 3px; padding: 0 4px; cursor: pointer; }
+.md-preview :deep(.md-spoiler):hover { color: #dcddde; }
+.md-preview :deep(.md-quote) { border-left: 4px solid #4f545c; padding-left: 8px; color: #dcddde; display: block; }
+.md-preview :deep(.md-mention) { background: rgba(88,101,242,.3); color: #b5c5f9; border-radius: 3px; padding: 0 4px; font-weight: 500; }
+.md-preview :deep(.md-channel) { background: rgba(88,101,242,.3); color: #b5c5f9; border-radius: 3px; padding: 0 4px; font-weight: 500; }
 </style>

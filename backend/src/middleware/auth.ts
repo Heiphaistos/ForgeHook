@@ -8,6 +8,7 @@ export const requireAuth = createMiddleware(async (c, next) => {
   if (!token) return c.json({ error: 'Unauthorized' }, 401)
   try {
     const payload = verify(token, process.env.JWT_SECRET!) as { id: number }
+    if (typeof payload.id !== 'number') return c.json({ error: 'Invalid token' }, 401)
     c.set('userId' as never, payload.id)
     await next()
   } catch {

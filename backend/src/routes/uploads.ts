@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { requireAuth } from '../middleware/auth.js'
 import { mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync, readFileSync, existsSync } from 'fs'
-import { join, extname } from 'path'
+import { join, extname, resolve } from 'path'
 import { randomUUID } from 'crypto'
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR ?? '/app/data/uploads'
@@ -21,9 +21,10 @@ uploadRoutes.get('/file/:filename', (c) => {
   const raw = c.req.param('filename')
   const filename = raw.replace(/[^a-z0-9._-]/gi, '')
   const ext = extname(filename).toLowerCase()
-  const path = join(UPLOAD_DIR, filename)
-  if (!ALLOWED.includes(ext) || !existsSync(path)) return c.json({ error: 'Not found' }, 404)
-  const data = readFileSync(path)
+  const resolvedPath = resolve(join(UPLOAD_DIR, filename))
+  if (!resolvedPath.startsWith(resolve(UPLOAD_DIR))) return c.json({ error: 'Invalid path' }, 400)
+  if (!ALLOWED.includes(ext) || !existsSync(resolvedPath)) return c.json({ error: 'Not found' }, 404)
+  const data = readFileSync(resolvedPath)
   return c.body(data, 200, {
     'Content-Type': MIME[ext] ?? 'application/octet-stream',
     'Cache-Control': 'public, max-age=31536000',
@@ -60,8 +61,10 @@ uploadRoutes.get('/list', (c) => {
 
 uploadRoutes.delete('/:filename', (c) => {
   const filename = c.req.param('filename').replace(/[^a-z0-9._-]/gi, '')
+  const resolvedPath = resolve(join(UPLOAD_DIR, filename))
+  if (!resolvedPath.startsWith(resolve(UPLOAD_DIR))) return c.json({ error: 'Invalid path' }, 400)
   try {
-    unlinkSync(join(UPLOAD_DIR, filename))
+    unlinkSync(resolvedPath)
     return c.json({ ok: true })
   } catch {
     return c.json({ error: 'Not found' }, 404)
