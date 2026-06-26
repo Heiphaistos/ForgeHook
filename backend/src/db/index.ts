@@ -25,6 +25,8 @@ export function getDb(): Database.Database {
       "ALTER TABLE history ADD COLUMN send_type TEXT DEFAULT 'webhook'",
       'ALTER TABLE history ADD COLUMN message_id TEXT',
       'ALTER TABLE templates ADD COLUMN favorited INTEGER DEFAULT 0',
+      "ALTER TABLE tutorials ADD COLUMN category TEXT DEFAULT ''",
+      "ALTER TABLE tutorials ADD COLUMN tags TEXT DEFAULT ''",
     ]
     for (const m of migrations) {
       try { db.exec(m) } catch { /* column already exists */ }

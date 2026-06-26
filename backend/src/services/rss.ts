@@ -48,14 +48,13 @@ export async function checkFeed(feed: any): Promise<void> {
 }
 
 export function startRssPoller(): void {
-  setInterval(async () => {
+  setInterval(() => {
     const db = getDb()
     const feeds = db.prepare('SELECT * FROM rss_feeds WHERE enabled=1').all() as any[]
-    for (const feed of feeds) {
+    const due = feeds.filter(feed => {
       const lastChecked = feed.last_checked ? new Date(feed.last_checked).getTime() : 0
-      if (Date.now() - lastChecked >= feed.check_interval * 1000) {
-        await checkFeed(feed)
-      }
-    }
+      return Date.now() - lastChecked >= feed.check_interval * 1000
+    })
+    if (due.length) Promise.all(due.map(checkFeed)).catch(() => {})
   }, 60_000)
 }

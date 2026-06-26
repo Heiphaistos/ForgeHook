@@ -47,7 +47,6 @@
         </template>
         <span v-else class="bot-error">{{ botStatus.error }}</span>
       </div>
-      <a href="http://127.0.0.1:3031" target="_blank" rel="noopener" class="btn-secondary bot-link" v-if="botStatus.online">Dashboard →</a>
     </div>
 
     <!-- Chart 7 jours + Top webhooks -->
