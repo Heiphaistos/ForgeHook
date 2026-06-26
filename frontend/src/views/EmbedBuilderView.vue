@@ -841,7 +841,7 @@ async function submitTemplate() {
   await api.post('/templates', {
     name: tplForm.value.name,
     description: tplForm.value.description,
-    payload: JSON.stringify(embedStore.message),
+    payload: embedStore.message,
     category: tplForm.value.category,
     preview_color: embedStore.message.embeds[0]?.color
       ? '#' + embedStore.message.embeds[0].color!.toString(16).padStart(6, '0')
