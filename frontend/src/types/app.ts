@@ -6,6 +6,8 @@ export interface Webhook {
   username: string | null
   category: string
   created_at?: string
+  health_status?: 'ok' | 'dead' | null
+  last_health_check?: string | null
 }
 
 export interface Bot {

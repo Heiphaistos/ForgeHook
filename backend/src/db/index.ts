@@ -27,6 +27,12 @@ export function getDb(): Database.Database {
       'ALTER TABLE templates ADD COLUMN favorited INTEGER DEFAULT 0',
       "ALTER TABLE tutorials ADD COLUMN category TEXT DEFAULT ''",
       "ALTER TABLE tutorials ADD COLUMN tags TEXT DEFAULT ''",
+      // 2FA TOTP (feature v3.2.0)
+      'ALTER TABLE users ADD COLUMN totp_secret TEXT',
+      'ALTER TABLE users ADD COLUMN totp_enabled INTEGER DEFAULT 0',
+      // Monitoring webhooks (feature v3.2.0)
+      'ALTER TABLE webhooks ADD COLUMN health_status TEXT',
+      'ALTER TABLE webhooks ADD COLUMN last_health_check TEXT',
     ]
     for (const m of migrations) {
       try { db.exec(m) } catch { /* column already exists */ }

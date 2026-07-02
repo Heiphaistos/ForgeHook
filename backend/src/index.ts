@@ -16,6 +16,7 @@ import { rssdiRoutes } from './routes/rssdi.js'
 import { adminRoutes } from './routes/admin.js'
 import { startScheduler } from './services/scheduler.js'
 import { startRssPoller } from './services/rss.js'
+import { startWebhookMonitor } from './services/monitor.js'
 import { mkdirSync } from 'fs'
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'changeme' || process.env.JWT_SECRET === 'change_this_to_a_random_64_char_string') {
@@ -45,7 +46,7 @@ app.route('/api/rssdi', rssdiRoutes)
 app.route('/api/admin', adminRoutes)
 mkdirSync(process.env.UPLOAD_DIR ?? '/app/data/uploads', { recursive: true })
 
-app.get('/health', (c) => c.json({ ok: true, version: '3.1.1', app: 'forgehook' }))
+app.get('/health', (c) => c.json({ ok: true, version: '3.2.0', app: 'forgehook' }))
 
 app.onError((err, c) => {
   console.error('[error]', err)
@@ -54,6 +55,7 @@ app.onError((err, c) => {
 
 startScheduler()
 startRssPoller()
+startWebhookMonitor()
 
 const port = Number(process.env.PORT ?? 3020)
 serve({ fetch: app.fetch, port }, () => {

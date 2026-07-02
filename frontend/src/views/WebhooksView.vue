@@ -2,7 +2,12 @@
   <div class="page">
     <div class="page-header">
       <h1>🔗 Webhooks</h1>
-      <button @click="openForm()" class="btn-primary">+ Ajouter</button>
+      <div style="display:flex; gap:8px">
+        <button @click="checkHealth" class="btn-secondary" :disabled="checking">
+          {{ checking ? '⏳ Vérification…' : '🩺 Vérifier la santé' }}
+        </button>
+        <button @click="openForm()" class="btn-primary">+ Ajouter</button>
+      </div>
     </div>
 
     <div v-if="!store.webhooks.length" class="empty-state">
@@ -17,7 +22,11 @@
             <img v-if="w.avatar_url" :src="w.avatar_url" class="wh-avatar" alt="" @error="($event.target as HTMLImageElement).style.display='none'" />
             <div v-else class="wh-avatar-placeholder">🤖</div>
             <div class="wh-info">
-              <div class="wh-name">{{ w.name }}</div>
+              <div class="wh-name">
+                {{ w.name }}
+                <span v-if="w.health_status === 'ok'" class="health-dot health-ok" title="En ligne">●</span>
+                <span v-else-if="w.health_status === 'dead'" class="health-dot health-dead" title="Hors service — le webhook ne répond plus">●</span>
+              </div>
               <div v-if="w.username" class="wh-username">@{{ w.username }}</div>
             </div>
           </div>
@@ -97,6 +106,7 @@ const router = useRouter()
 const showForm = ref(false)
 const editing = ref<Webhook | null>(null)
 const submitting = ref(false)
+const checking = ref(false)
 const formError = ref('')
 const form = ref({ name: '', url: '', username: '', avatar_url: '', category: 'default' })
 
@@ -165,6 +175,21 @@ async function test(w: Webhook) {
   ui.notify(r.ok ? `✅ ${w.name} — OK` : `❌ Test échoué: ${r.error}`, r.ok ? 'success' : 'error')
 }
 
+async function checkHealth() {
+  checking.value = true
+  try {
+    const r = await store.checkHealth()
+    ui.notify(
+      r.dead > 0 ? `🩺 ${r.ok}/${r.total} en ligne — ${r.dead} hors service` : `🩺 Tous les webhooks sont en ligne (${r.ok}/${r.total})`,
+      r.dead > 0 ? 'error' : 'success'
+    )
+  } catch {
+    ui.notify('Échec de la vérification', 'error')
+  } finally {
+    checking.value = false
+  }
+}
+
 function useInBuilder(id: number) {
   embedStore.selectedWebhookId = id
   router.push('/embed')
@@ -190,5 +215,8 @@ async function remove(w: Webhook) {
 .chip-ok { background: rgba(87,242,135,.1); color: #57f287; border-color: rgba(87,242,135,.3); }
 .chip-warn { background: rgba(255,163,67,.1); color: #ffa343; border-color: rgba(255,163,67,.3); }
 .chip-err { background: rgba(237,66,69,.1); color: #ed4245; border-color: rgba(237,66,69,.3); }
+.health-dot { font-size: 10px; margin-left: 6px; vertical-align: middle; }
+.health-ok { color: #57f287; }
+.health-dead { color: #ed4245; }
 .empty-state { color: var(--text-muted); text-align: center; padding: 48px; }
 </style>

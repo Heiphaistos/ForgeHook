@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { requireAuth } from '../middleware/auth.js'
 import { getDb } from '../db/index.js'
+import { checkAllWebhooks } from '../services/monitor.js'
 import { z } from 'zod'
 
 const webhookSchema = z.object({
@@ -26,6 +27,12 @@ webhookRoutes.get('/', (c) => {
      ORDER BY w.category, w.name`
   ).all()
   return c.json(rows)
+})
+
+// Vérifier la santé de tous les webhooks maintenant (bouton "Vérifier" dans l'UI)
+webhookRoutes.post('/check', async (c) => {
+  const summary = await checkAllWebhooks()
+  return c.json(summary)
 })
 
 webhookRoutes.post('/', async (c) => {

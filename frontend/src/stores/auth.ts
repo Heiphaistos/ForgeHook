@@ -16,10 +16,19 @@ export const useAuthStore = defineStore('auth', () => {
     configured.value = true
   }
 
-  async function login(password: string) {
-    const { data } = await api.post('/auth/login', { password })
-    token.value = data.token
-    localStorage.setItem('fh_token', data.token)
+  // Retourne { needs2fa: true } si un code TOTP est requis pour finaliser.
+  async function login(password: string, code?: string): Promise<{ needs2fa?: boolean }> {
+    try {
+      const { data } = await api.post('/auth/login', { password, code: code || undefined })
+      token.value = data.token
+      localStorage.setItem('fh_token', data.token)
+      return {}
+    } catch (e: any) {
+      if (e.response?.status === 401 && e.response?.data?.needs2fa) {
+        return { needs2fa: true }
+      }
+      throw e
+    }
   }
 
   function logout() {

@@ -3,7 +3,7 @@
     <div class="page-header">
       <h1>📊 Dashboard</h1>
       <div style="display:flex;gap:8px;align-items:center">
-        <div style="font-size:12px;color:var(--text-muted)">ForgeHook v3.0.0</div>
+        <div style="font-size:12px;color:var(--text-muted)">ForgeHook v3.2.0</div>
         <a :href="`${apiBase}/admin/backup`" class="btn-secondary" style="font-size:12px" title="Télécharger un backup SQLite" download>💾 Backup DB</a>
       </div>
     </div>
@@ -103,15 +103,153 @@
         <router-link to="/history" class="btn-secondary mt-2" style="display:inline-block">Voir tout →</router-link>
       </div>
     </div>
+
+    <!-- Sécurité & Données -->
+    <div class="dashboard-grid mt-4">
+      <!-- 2FA -->
+      <div class="card">
+        <h3>🔐 Authentification à deux facteurs</h3>
+        <div v-if="twofa.enabled" class="sec-row">
+          <span class="badge badge-success">● Activé</span>
+          <button class="btn-danger-sm" @click="startDisable2fa">Désactiver</button>
+        </div>
+        <template v-else>
+          <p class="empty-hint" v-if="!twofa.setup">
+            Ajoutez une couche de sécurité : un code temporaire (Google Authenticator, Authy…) en plus du mot de passe.
+          </p>
+          <button v-if="!twofa.setup" class="btn-primary" @click="start2fa" :disabled="twofa.loading">
+            {{ twofa.loading ? '…' : 'Activer le 2FA' }}
+          </button>
+          <div v-else class="sec-setup">
+            <p class="empty-hint">1. Ajoutez cette clé dans votre app d'authentification (saisie manuelle) :</p>
+            <code class="sec-secret" @click="copySecret" title="Cliquer pour copier">{{ twofa.secret }}</code>
+            <a :href="twofa.uri" class="empty-hint" style="font-size:11px;word-break:break-all">Ou ouvrir via lien otpauth://</a>
+            <p class="empty-hint">2. Entrez le code affiché pour confirmer :</p>
+            <div class="sec-row">
+              <input v-model="twofa.code" maxlength="6" inputmode="numeric" placeholder="123456" class="fh-input" style="max-width:130px" />
+              <button class="btn-primary" @click="confirm2fa" :disabled="twofa.loading">Confirmer</button>
+              <button class="btn-secondary" @click="cancel2fa">Annuler</button>
+            </div>
+          </div>
+        </template>
+        <p v-if="twofa.error" class="error" style="margin-top:8px">{{ twofa.error }}</p>
+      </div>
+
+      <!-- Import / Export -->
+      <div class="card">
+        <h3>📦 Import / Export</h3>
+        <p class="empty-hint">Sauvegardez ou transférez vos webhooks et templates au format JSON.</p>
+        <div class="sec-row">
+          <button class="btn-secondary" @click="exportJson">⬇️ Exporter JSON</button>
+          <button class="btn-secondary" @click="importInput?.click()">⬆️ Importer JSON</button>
+          <input ref="importInput" type="file" accept="application/json,.json" style="display:none" @change="importJson" />
+        </div>
+        <p v-if="importResult" class="empty-hint" style="margin-top:8px">{{ importResult }}</p>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import api from '../api/client'
+import { useUiStore } from '../stores/ui'
 import type { HistoryEntry } from '../types/app'
 
 const apiBase = import.meta.env.VITE_API_URL ?? '/api'
+const ui = useUiStore()
+
+// --- 2FA ---
+const twofa = ref<{
+  enabled: boolean; setup: boolean; secret: string; uri: string;
+  code: string; loading: boolean; error: string;
+}>({ enabled: false, setup: false, secret: '', uri: '', code: '', loading: false, error: '' })
+
+async function loadTwofa() {
+  try { twofa.value.enabled = (await api.get('/auth/2fa/status')).data.enabled } catch {}
+}
+
+async function start2fa() {
+  twofa.value.loading = true; twofa.value.error = ''
+  try {
+    const { data } = await api.post('/auth/2fa/setup')
+    twofa.value.secret = data.secret
+    twofa.value.uri = data.otpauth_uri
+    twofa.value.setup = true
+  } catch (e: any) {
+    twofa.value.error = e.response?.data?.error ?? 'Erreur'
+  } finally { twofa.value.loading = false }
+}
+
+async function confirm2fa() {
+  if (!/^\d{6}$/.test(twofa.value.code)) { twofa.value.error = 'Code à 6 chiffres requis'; return }
+  twofa.value.loading = true; twofa.value.error = ''
+  try {
+    await api.post('/auth/2fa/enable', { code: twofa.value.code })
+    twofa.value.enabled = true; twofa.value.setup = false; twofa.value.code = ''; twofa.value.secret = ''
+    ui.notify('2FA activé ✓', 'success')
+  } catch (e: any) {
+    twofa.value.error = e.response?.data?.error ?? 'Code invalide'
+  } finally { twofa.value.loading = false }
+}
+
+function cancel2fa() {
+  twofa.value.setup = false; twofa.value.code = ''; twofa.value.secret = ''; twofa.value.error = ''
+}
+
+async function startDisable2fa() {
+  const password = prompt('Mot de passe admin pour désactiver le 2FA :')
+  if (!password) return
+  const code = prompt('Code 2FA actuel (6 chiffres) :')
+  if (!code) return
+  try {
+    await api.post('/auth/2fa/disable', { password, code })
+    twofa.value.enabled = false
+    ui.notify('2FA désactivé', 'success')
+  } catch (e: any) {
+    ui.notify(e.response?.data?.error ?? 'Échec de la désactivation', 'error')
+  }
+}
+
+function copySecret() {
+  navigator.clipboard?.writeText(twofa.value.secret).then(() => ui.notify('Clé copiée')).catch(() => {})
+}
+
+// --- Import / Export ---
+const importInput = ref<HTMLInputElement | null>(null)
+const importResult = ref('')
+
+async function exportJson() {
+  try {
+    const { data } = await api.get('/admin/export')
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `forgehook-export-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch {
+    ui.notify('Export échoué', 'error')
+  }
+}
+
+async function importJson(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  importResult.value = ''
+  try {
+    const json = JSON.parse(await file.text())
+    const { data } = await api.post('/admin/import', json)
+    importResult.value = `Import : +${data.webhooksAdded} webhooks (${data.webhooksSkipped} ignorés), +${data.templatesAdded} templates (${data.templatesSkipped} ignorés)`
+    ui.notify('Import terminé', 'success')
+  } catch (e: any) {
+    importResult.value = e.response?.data?.error ?? 'Fichier JSON invalide'
+    ui.notify('Import échoué', 'error')
+  } finally {
+    if (importInput.value) importInput.value.value = ''
+  }
+}
 const counts = ref({ webhooks: 0, bots: 0, templates: 0, rss: 0, jobs: 0 })
 const botStatus = ref<{ online: boolean; guilds?: number; users?: number; commands_today?: number; uptime?: string; error?: string } | null>(null)
 const msgStats = ref<{
@@ -145,6 +283,7 @@ onMounted(async () => {
   }).catch(() => {
     botStatus.value = { online: false, error: 'Non configuré' }
   })
+  loadTwofa()
 })
 
 function fmtDate(d: string): string {
@@ -196,4 +335,8 @@ function shortDay(day: string): string {
 .empty-hint { color: var(--text-muted); font-size: 13px; padding: 8px 0; }
 .mt-4 { margin-top: 16px; }
 .mt-2 { margin-top: 8px; }
+.sec-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.sec-setup { display: flex; flex-direction: column; gap: 8px; }
+.sec-secret { display: inline-block; font-family: monospace; font-size: 15px; letter-spacing: 2px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; cursor: pointer; word-break: break-all; color: #fff; }
+.error { color: #ed4245; font-size: 13px; }
 </style>

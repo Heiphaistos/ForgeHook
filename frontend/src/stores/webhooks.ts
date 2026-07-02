@@ -31,5 +31,12 @@ export const useWebhooksStore = defineStore('webhooks', () => {
     return data
   }
 
-  return { webhooks, load, create, update, remove, test }
+  // Vérifier la santé de tous les webhooks (monitoring), puis recharger les statuts.
+  async function checkHealth(): Promise<{ total: number; ok: number; dead: number }> {
+    const { data } = await api.post('/webhooks/check')
+    await load()
+    return data
+  }
+
+  return { webhooks, load, create, update, remove, test, checkHealth }
 })
