@@ -8,3 +8,10 @@ target/
 src-tauri/target/
 desktop/node_modules/
 frontend/node_modules/
+
+# Artefacts de compilation TypeScript parasites dans les sources
+# (utiliser `vue-tsc --noEmit`, jamais `tsc` qui émet ces .js à côté des sources)
+frontend/src/**/*.js
+frontend/src/**/*.vue.js
+frontend/src/**/*.js.map
+frontend/src/**/*.d.ts

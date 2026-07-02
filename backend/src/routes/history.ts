@@ -76,10 +76,13 @@ historyRoutes.post('/:id/resend', async (c) => {
 })
 
 historyRoutes.delete('/bulk', async (c) => {
-  const body = await c.req.json() as { ids: number[] }
-  if (!Array.isArray(body.ids) || body.ids.length === 0) return c.json({ error: 'ids required' }, 400)
-  const placeholders = body.ids.map(() => '?').join(',')
-  const result = getDb().prepare(`DELETE FROM history WHERE id IN (${placeholders})`).run(...body.ids)
+  const body = await c.req.json().catch(() => null) as { ids?: unknown } | null
+  const ids = Array.isArray(body?.ids)
+    ? body!.ids.filter((n): n is number => Number.isInteger(n)).slice(0, 1000)
+    : []
+  if (ids.length === 0) return c.json({ error: 'ids required (integers)' }, 400)
+  const placeholders = ids.map(() => '?').join(',')
+  const result = getDb().prepare(`DELETE FROM history WHERE id IN (${placeholders})`).run(...ids)
   return c.json({ ok: true, deleted: result.changes })
 })
 

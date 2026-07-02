@@ -1,11 +1,18 @@
 import Parser from 'rss-parser'
 import { getDb } from '../db/index.js'
 import { sendWebhook } from './discord.js'
+import { isSafeUrl } from '../utils/ssrf.js'
 
 const parser = new Parser()
 
 export async function checkFeed(feed: any): Promise<void> {
   const db = getDb()
+  // Re-valider l'URL au moment du fetch (défense en profondeur : lignes héritées
+  // d'avant la garde SSRF, ou DB altérée).
+  if (!isSafeUrl(feed.url)) {
+    console.warn(`[rss] Feed "${feed.name}" ignoré : URL non autorisée (${feed.url})`)
+    return
+  }
   try {
     const parsed = await parser.parseURL(feed.url)
     if (!parsed.items.length) return
