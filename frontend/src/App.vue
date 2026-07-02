@@ -10,8 +10,27 @@
       </main>
     </template>
     <AppNotification />
+    <footer class="legal-footer">
+      <a href="https://heiphaistos.org/legal/" target="_blank" rel="noopener noreferrer">Mentions légales</a>
+    </footer>
   </div>
 </template>
+
+<style scoped>
+.legal-footer {
+  text-align: center;
+  padding: 8px 0 12px;
+  font-size: 0.72rem;
+  opacity: 0.55;
+}
+.legal-footer a {
+  color: inherit;
+  text-decoration: none;
+}
+.legal-footer a:hover {
+  text-decoration: underline;
+}
+</style>
 
 <script setup lang="ts">
 import { computed } from 'vue'
